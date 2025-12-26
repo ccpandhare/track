@@ -61,13 +61,7 @@ authRouter.post('/register/start', async (req, res) => {
     return res.status(400).json({ error: 'Invite code required' });
   }
 
-  // Check if username is in allowlist
-  if (!allowedUsers.has(username)) {
-    auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'not_in_allowlist' });
-    return res.status(403).json({ error: 'Registration is invite-only. This username is not authorized.' });
-  }
-
-  // Verify invite code
+  // Verify invite code first (to provide better error messages)
   const invite = db.prepare(`
     SELECT code, username, used_at
     FROM invite_codes
@@ -76,17 +70,28 @@ authRouter.post('/register/start', async (req, res) => {
 
   if (!invite) {
     auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'invalid_invite_code' });
-    return res.status(403).json({ error: 'Invalid invite code' });
+    return res.status(403).json({ error: 'Invalid invite code. Please check your code and try again.' });
   }
 
   if (invite.used_at) {
     auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'invite_code_already_used' });
-    return res.status(403).json({ error: 'This invite code has already been used' });
+    return res.status(403).json({ error: 'This invite code has already been used. Please contact the administrator for a new code.' });
   }
 
+  // Check if the username matches the invite code
   if (invite.username !== username) {
     auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'invite_code_username_mismatch' });
-    return res.status(403).json({ error: 'This invite code is not valid for this username' });
+    return res.status(403).json({
+      error: `This invite code is for username "${invite.username}". Please use the correct username or contact the administrator.`
+    });
+  }
+
+  // Check if username is in allowlist (should be added automatically when invite is generated)
+  if (!allowedUsers.has(username)) {
+    auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'not_in_allowlist' });
+    return res.status(403).json({
+      error: 'Your account has not been authorized yet. Please contact the administrator to complete your invitation.'
+    });
   }
 
   auditLog(AuditEvents.REGISTRATION_ATTEMPT, username, true, { invite_code: inviteCode });
