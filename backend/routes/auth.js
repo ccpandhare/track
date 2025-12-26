@@ -61,7 +61,15 @@ authRouter.post('/register/start', async (req, res) => {
     return res.status(400).json({ error: 'Invite code required' });
   }
 
-  // Verify invite code first (to provide better error messages)
+  // Check if username is in allowlist FIRST (better error message if not invited at all)
+  if (!allowedUsers.has(username)) {
+    auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'not_in_allowlist' });
+    return res.status(403).json({
+      error: 'This username is not invited. Please contact the administrator for an invitation.'
+    });
+  }
+
+  // Now verify invite code (user is allowlisted, so check if they have valid code)
   const invite = db.prepare(`
     SELECT code, username, used_at
     FROM invite_codes
@@ -83,14 +91,6 @@ authRouter.post('/register/start', async (req, res) => {
     auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'invite_code_username_mismatch' });
     return res.status(403).json({
       error: `This invite code is for username "${invite.username}". Please use the correct username or contact the administrator.`
-    });
-  }
-
-  // Check if username is in allowlist (should be added automatically when invite is generated)
-  if (!allowedUsers.has(username)) {
-    auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'not_in_allowlist' });
-    return res.status(403).json({
-      error: 'Your account has not been authorized yet. Please contact the administrator to complete your invitation.'
     });
   }
 
