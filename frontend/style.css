@@ -48,22 +48,24 @@ header {
   gap: 15px;
 }
 
-#auth-forms {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 30px;
-  margin-top: 30px;
-}
-
 .auth-form {
-  padding: 20px;
+  max-width: 450px;
+  margin: 30px auto 0;
+  padding: 30px;
   border: 2px solid #eee;
   border-radius: 8px;
+  background: #fafafa;
 }
 
 .auth-form h2 {
-  font-size: 1.3em;
-  margin-bottom: 15px;
+  font-size: 1.5em;
+  margin-bottom: 20px;
+  text-align: center;
+  color: #667eea;
+}
+
+.auth-form button {
+  width: 100%;
 }
 
 input[type="text"],
@@ -309,8 +311,8 @@ button:active {
 }
 
 @media (max-width: 768px) {
-  #auth-forms {
-    grid-template-columns: 1fr;
+  .auth-form {
+    padding: 20px;
   }
 
   .search-form {

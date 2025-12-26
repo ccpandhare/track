@@ -79,8 +79,12 @@ if (existingInvite) {
       console.log(`\nℹ️  User already in allowlist`);
     }
 
-    console.log(`\nSend this code to ${username} to complete registration at:`);
-    console.log(`https://track.chinmaypandhare.uk\n`);
+    console.log(`\n📧 Send this registration link to ${username}:`);
+    console.log(`https://track.chinmaypandhare.uk?username=${encodeURIComponent(username)}&invite=${encodeURIComponent(existingInvite.code)}`);
+    console.log(`\nOr provide these details for manual registration:`);
+    console.log(`  Website: https://track.chinmaypandhare.uk`);
+    console.log(`  Username: ${username}`);
+    console.log(`  Invite Code: ${existingInvite.code}\n`);
     process.exit(0);
   }
 }
@@ -107,9 +111,13 @@ try {
     console.log(`\nℹ️  User was already in allowlist`);
   }
 
-  console.log(`\nSend this code to ${username} to complete registration at:`);
-  console.log(`https://track.chinmaypandhare.uk\n`);
-  console.log(`⚠️  This code is single-use and can only be used by '${username}'.\n`);
+  console.log(`\n📧 Send this registration link to ${username}:`);
+  console.log(`https://track.chinmaypandhare.uk?username=${encodeURIComponent(username)}&invite=${encodeURIComponent(inviteCode)}`);
+  console.log(`\nOr provide these details for manual registration:`);
+  console.log(`  Website: https://track.chinmaypandhare.uk`);
+  console.log(`  Username: ${username}`);
+  console.log(`  Invite Code: ${inviteCode}`);
+  console.log(`\n⚠️  This code is single-use and can only be used by '${username}'.\n`);
 } catch (error) {
   console.error('❌ Error generating invite code:', error.message);
   process.exit(1);

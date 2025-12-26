@@ -12,18 +12,36 @@
     <div id="auth-section" class="container">
       <h1>✈️ Flight Tracker</h1>
       <div id="error-message" class="error" style="display: none;"></div>
-      <div id="auth-forms">
-        <div class="auth-form">
-          <h2>Register</h2>
-          <input type="text" id="register-username" placeholder="Username" />
-          <input type="text" id="register-invite-code" placeholder="Invite Code" />
-          <button id="register-btn">Register with Passkey</button>
-        </div>
-        <div class="auth-form">
-          <h2>Login</h2>
-          <input type="text" id="login-username" placeholder="Username" />
-          <button id="login-btn">Login with Passkey</button>
-        </div>
+
+      <!-- Login Form (shown by default) -->
+      <div id="login-form" class="auth-form">
+        <h2>Login</h2>
+        <input type="text" id="login-username" placeholder="Username" />
+        <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 15px; font-size: 0.9em; color: #666; cursor: pointer;">
+          <input type="checkbox" id="remember-username-login" style="width: auto; margin: 0;">
+          Remember my username
+        </label>
+        <button id="login-btn">Login with Passkey</button>
+        <p style="margin-top: 15px; text-align: center; color: #666;">
+          Don't have an account?
+          <a href="#" id="show-register-link" style="color: #2196F3; text-decoration: none;">Register here</a>
+        </p>
+      </div>
+
+      <!-- Registration Form (hidden by default) -->
+      <div id="register-form" class="auth-form" style="display: none;">
+        <h2>Register</h2>
+        <input type="text" id="register-username" placeholder="Username" />
+        <input type="text" id="register-invite-code" placeholder="Invite Code" />
+        <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 15px; font-size: 0.9em; color: #666; cursor: pointer;">
+          <input type="checkbox" id="remember-username-register" style="width: auto; margin: 0;">
+          Remember my username
+        </label>
+        <button id="register-btn">Register with Passkey</button>
+        <p style="margin-top: 15px; text-align: center; color: #666;">
+          Already have an account?
+          <a href="#" id="show-login-link" style="color: #2196F3; text-decoration: none;">Login here</a>
+        </p>
       </div>
     </div>
 

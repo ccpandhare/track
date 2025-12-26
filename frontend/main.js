@@ -12,6 +12,8 @@ let sessionId = localStorage.getItem('sessionId');
 // DOM Elements
 const authSection = document.getElementById('auth-section');
 const mainSection = document.getElementById('main-section');
+const loginForm = document.getElementById('login-form');
+const registerForm = document.getElementById('register-form');
 const registerBtn = document.getElementById('register-btn');
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
@@ -19,6 +21,10 @@ const registerUsername = document.getElementById('register-username');
 const registerInviteCode = document.getElementById('register-invite-code');
 const loginUsername = document.getElementById('login-username');
 const usernameDisplay = document.getElementById('username-display');
+const showRegisterLink = document.getElementById('show-register-link');
+const showLoginLink = document.getElementById('show-login-link');
+const rememberUsernameLoginCheckbox = document.getElementById('remember-username-login');
+const rememberUsernameRegisterCheckbox = document.getElementById('remember-username-register');
 const searchBtn = document.getElementById('search-btn');
 const flightNumberInput = document.getElementById('flight-number');
 const flightDateInput = document.getElementById('flight-date');
@@ -29,6 +35,27 @@ const resultsSection = document.getElementById('results-section');
 
 // Set today's date as default
 flightDateInput.valueAsDate = new Date();
+
+// Remember username functionality
+function loadRememberedUsername() {
+  const rememberedUsername = localStorage.getItem('rememberedUsername');
+  if (rememberedUsername) {
+    loginUsername.value = rememberedUsername;
+    rememberUsernameLoginCheckbox.checked = true;
+  }
+}
+
+function saveUsername(username) {
+  if (rememberUsernameLoginCheckbox.checked || rememberUsernameRegisterCheckbox.checked) {
+    localStorage.setItem('rememberedUsername', username);
+  } else {
+    localStorage.removeItem('rememberedUsername');
+  }
+}
+
+function clearRememberedUsername() {
+  localStorage.removeItem('rememberedUsername');
+}
 
 // Helper function for API calls
 async function apiCall(endpoint, options = {}) {
@@ -137,6 +164,47 @@ function showError(message) {
   }, 5000);
 }
 
+// Toggle between login and register forms
+function showLoginForm() {
+  loginForm.style.display = 'block';
+  registerForm.style.display = 'none';
+  errorDiv.style.display = 'none';
+}
+
+function showRegisterForm() {
+  loginForm.style.display = 'none';
+  registerForm.style.display = 'block';
+  errorDiv.style.display = 'none';
+}
+
+// Event listeners for form toggling
+showRegisterLink.addEventListener('click', (e) => {
+  e.preventDefault();
+  showRegisterForm();
+});
+
+showLoginLink.addEventListener('click', (e) => {
+  e.preventDefault();
+  showLoginForm();
+});
+
+// Parse URL parameters for invite link
+function parseInviteLink() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const username = urlParams.get('username');
+  const inviteCode = urlParams.get('invite');
+
+  if (username && inviteCode) {
+    // Show registration form and pre-populate fields
+    showRegisterForm();
+    registerUsername.value = username;
+    registerInviteCode.value = inviteCode;
+
+    // Clear URL parameters from address bar (optional, for cleaner UX)
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+}
+
 // Check session on load
 async function checkSession() {
   if (!sessionId) {
@@ -201,8 +269,19 @@ registerBtn.addEventListener('click', async () => {
     });
 
     alert('Registration successful! Please log in.');
+
+    // Save username if checkbox is checked
+    saveUsername(username);
+
+    // Pre-fill login form with registered username
+    loginUsername.value = username;
+    if (rememberUsernameRegisterCheckbox.checked) {
+      rememberUsernameLoginCheckbox.checked = true;
+    }
+
     registerUsername.value = '';
     registerInviteCode.value = '';
+    showLoginForm(); // Switch to login form after successful registration
   } catch (error) {
     console.error('Registration error:', error);
     showError(error.message);
@@ -241,6 +320,7 @@ loginBtn.addEventListener('click', async () => {
 
     sessionId = data.sessionId;
     localStorage.setItem('sessionId', sessionId);
+    saveUsername(username); // Save username if checkbox is checked
     showMainSection(data.username);
     loginUsername.value = '';
   } catch (error) {
@@ -676,5 +756,7 @@ function getStatusClass(status) {
 }
 
 // Initialize
+parseInviteLink(); // Check for invite link parameters first
+loadRememberedUsername(); // Load remembered username if exists
 checkSession();
 updateHistoryDisplay();
