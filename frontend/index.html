@@ -15,6 +15,7 @@
         <div class="auth-form">
           <h2>Register</h2>
           <input type="text" id="register-username" placeholder="Username" />
+          <input type="text" id="register-invite-code" placeholder="Invite Code" />
           <button id="register-btn">Register with Passkey</button>
         </div>
         <div class="auth-form">
@@ -38,10 +39,14 @@
       <div class="search-section">
         <h2>Search Flight</h2>
         <div class="search-form">
-          <input type="text" id="flight-number" placeholder="Flight Number (e.g., BA123)" />
+          <div style="position: relative;">
+            <input type="text" id="flight-number" placeholder="Flight Number (e.g., 6E6744)" list="flight-history-list" />
+            <datalist id="flight-history-list"></datalist>
+          </div>
           <input type="date" id="flight-date" />
           <button id="search-btn">Search</button>
         </div>
+        <div id="recent-flights" style="margin-top: 15px;"></div>
       </div>
 
       <div id="loading" style="display: none;">
@@ -52,6 +57,11 @@
       <div id="error-message" class="error" style="display: none;"></div>
 
       <div id="results-section" style="display: none;">
+        <div id="delay-prediction" class="card">
+          <h2>⏱️ Delay Prediction</h2>
+          <div id="delay-details"></div>
+        </div>
+
         <div id="flight-info" class="card">
           <h2>Flight Information</h2>
           <div id="flight-details"></div>
@@ -60,11 +70,6 @@
         <div id="aircraft-info" class="card">
           <h2>Aircraft Information</h2>
           <div id="aircraft-details"></div>
-        </div>
-
-        <div id="delay-prediction" class="card">
-          <h2>Delay Prediction</h2>
-          <div id="delay-details"></div>
         </div>
 
         <div id="position-map" class="card">

@@ -16,6 +16,7 @@ const registerBtn = document.getElementById('register-btn');
 const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const registerUsername = document.getElementById('register-username');
+const registerInviteCode = document.getElementById('register-invite-code');
 const loginUsername = document.getElementById('login-username');
 const usernameDisplay = document.getElementById('username-display');
 const searchBtn = document.getElementById('search-btn');
@@ -50,6 +51,75 @@ async function apiCall(endpoint, options = {}) {
   }
 
   return response.json();
+}
+
+// Flight history management
+function saveFlightToHistory(flightNumber, flightData) {
+  try {
+    const history = JSON.parse(localStorage.getItem('flightHistory') || '[]');
+
+    // Remove duplicate if exists
+    const filtered = history.filter(f => f.flightNumber !== flightNumber);
+
+    // Add new entry at the beginning
+    filtered.unshift({
+      flightNumber,
+      searchedAt: Date.now(),
+      origin: flightData?.airport?.origin?.code?.iata || 'N/A',
+      destination: flightData?.airport?.destination?.code?.iata || 'N/A',
+      status: flightData?.status?.text || 'Unknown'
+    });
+
+    // Keep only last 10 searches
+    const trimmed = filtered.slice(0, 10);
+
+    localStorage.setItem('flightHistory', JSON.stringify(trimmed));
+    updateHistoryDisplay();
+  } catch (error) {
+    console.error('Error saving flight history:', error);
+  }
+}
+
+function getFlightHistory() {
+  try {
+    return JSON.parse(localStorage.getItem('flightHistory') || '[]');
+  } catch (error) {
+    console.error('Error loading flight history:', error);
+    return [];
+  }
+}
+
+function updateHistoryDisplay() {
+  const history = getFlightHistory();
+
+  // Update datalist for autocomplete
+  const datalist = document.getElementById('flight-history-list');
+  if (datalist) {
+    datalist.innerHTML = history.map(f => `<option value="${f.flightNumber}">${f.flightNumber} - ${f.origin} to ${f.destination}</option>`).join('');
+  }
+
+  // Update recent flights display
+  const recentFlightsDiv = document.getElementById('recent-flights');
+  if (recentFlightsDiv && history.length > 0) {
+    recentFlightsDiv.innerHTML = `
+      <div style="font-size: 0.9em; color: #666;">
+        <strong>Recent Searches:</strong>
+        ${history.slice(0, 5).map(f => `
+          <span class="recent-flight-chip" data-flight="${f.flightNumber}">
+            ${f.flightNumber}
+          </span>
+        `).join('')}
+      </div>
+    `;
+
+    // Add click handlers
+    document.querySelectorAll('.recent-flight-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        flightNumberInput.value = chip.dataset.flight;
+        searchBtn.click();
+      });
+    });
+  }
 }
 
 // Show error message
@@ -93,8 +163,15 @@ function showMainSection(username) {
 // Registration
 registerBtn.addEventListener('click', async () => {
   const username = registerUsername.value.trim();
+  const inviteCode = registerInviteCode.value.trim();
+
   if (!username) {
     showError('Please enter a username');
+    return;
+  }
+
+  if (!inviteCode) {
+    showError('Please enter your invite code');
     return;
   }
 
@@ -105,7 +182,7 @@ registerBtn.addEventListener('click', async () => {
     // Start registration
     const { options, userId } = await apiCall('/auth/register/start', {
       method: 'POST',
-      body: JSON.stringify({ username }),
+      body: JSON.stringify({ username, inviteCode }),
     });
 
     // Prompt user for passkey
@@ -114,11 +191,12 @@ registerBtn.addEventListener('click', async () => {
     // Finish registration
     await apiCall('/auth/register/finish', {
       method: 'POST',
-      body: JSON.stringify({ userId, username, credential }),
+      body: JSON.stringify({ userId, username, credential, inviteCode }),
     });
 
     alert('Registration successful! Please log in.');
     registerUsername.value = '';
+    registerInviteCode.value = '';
   } catch (error) {
     console.error('Registration error:', error);
     showError(error.message);
@@ -216,7 +294,11 @@ searchBtn.addEventListener('click', async () => {
       apiCall(`/flights/delay-prediction/${flightId}`)
     ]);
 
-    displayFlightInfo(flightDetails, delayPrediction);
+    displayFlightInfo(flightDetails, delayPrediction, flightId);
+
+    // Save to history
+    saveFlightToHistory(flightNumber, flight);
+
     loadingDiv.style.display = 'none';
     resultsSection.style.display = 'block';
   } catch (error) {
@@ -226,17 +308,23 @@ searchBtn.addEventListener('click', async () => {
   }
 });
 
-function displayFlightInfo(flightData, delayData) {
+function displayFlightInfo(flightData, delayData, flightId) {
   const flight = flightData.result.response;
   const aircraft = flight.aircraft;
   const status = flight.status;
 
   // Flight information
   const flightDetailsDiv = document.getElementById('flight-details');
+  const flightNumberIATA = delayData.flightNumberIATA || flight.identification.number.default;
+
   flightDetailsDiv.innerHTML = `
     <div class="info-row">
       <div class="info-label">Flight Number:</div>
-      <div class="info-value">${flight.identification.number.default || 'N/A'}</div>
+      <div class="info-value">
+        <a href="https://www.flightradar24.com/data/flights/${(flightNumberIATA || 'N/A').toLowerCase()}" target="_blank" rel="noopener noreferrer" class="fa-link">
+          ${flightNumberIATA || 'N/A'} ↗
+        </a>
+      </div>
     </div>
     <div class="info-row">
       <div class="info-label">Callsign:</div>
@@ -305,31 +393,70 @@ function displayFlightInfo(flightData, delayData) {
 
   // Delay prediction
   const delayDetailsDiv = document.getElementById('delay-details');
-  const delayMinutes = delayData.predictedDelay || 0;
-  const delayClass = delayMinutes === 0 ? 'delay-none' : (delayMinutes < 30 ? 'delay-minor' : 'delay-major');
+  const arrivalDelay = delayData.arrivalDelay || delayData.predictedDelay || 0;
+  const departureDelay = delayData.departureDelay || delayData.currentDelay || 0;
+  const maxDelay = Math.max(Math.abs(arrivalDelay), Math.abs(departureDelay));
+  const delayClass = maxDelay <= 0 ? 'delay-none' : (maxDelay < 30 ? 'delay-minor' : 'delay-major');
 
   delayDetailsDiv.innerHTML = `
     <div class="delay-indicator ${delayClass}">
-      ${delayMinutes > 0 ? `+${delayMinutes} minutes` : 'On Time'}
+      ${maxDelay > 0 ? `⚠️ Delayed` : '✅ On Time'}
+    </div>
+    ${delayData.inboundDelayImpact ? `
+    <div class="info-row" style="background-color: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+      <div class="info-label">⚠️ Inbound Aircraft Impact:</div>
+      <div class="info-value"><strong>${delayData.inboundDelayImpact} minutes delay</strong></div>
+    </div>
+    ` : ''}
+    <div class="info-row">
+      <div class="info-label">Departure Delay:</div>
+      <div class="info-value">${departureDelay !== null && departureDelay !== 0 ? `${departureDelay > 0 ? '+' : ''}${departureDelay} minutes` : 'On time'}</div>
     </div>
     <div class="info-row">
-      <div class="info-label">Current Delay:</div>
-      <div class="info-value">${delayData.currentDelay ? `${delayData.currentDelay} minutes` : 'On time'}</div>
-    </div>
-    <div class="info-row">
-      <div class="info-label">Predicted Arrival Delay:</div>
-      <div class="info-value">${delayData.predictedDelay ? `${delayData.predictedDelay} minutes` : 'On time'}</div>
+      <div class="info-label">Arrival Delay:</div>
+      <div class="info-value">${arrivalDelay !== null && arrivalDelay !== 0 ? `${arrivalDelay > 0 ? '+' : ''}${arrivalDelay} minutes` : 'On time'}</div>
     </div>
     ${delayData.delayReason ? `
     <div class="info-row">
       <div class="info-label">Reason:</div>
-      <div class="info-value">${delayData.delayReason}</div>
+      <div class="info-value"><strong>${delayData.delayReason}</strong></div>
     </div>
+    ` : ''}
+    ${delayData.inboundFlightId ? `
+    <div class="info-row">
+      <div class="info-label">Inbound Flight:</div>
+      <div class="info-value">
+        <a href="https://www.flightradar24.com/data/flights/${(delayData.inboundFlightIATA || delayData.inboundFlightId.split('-')[0]).toLowerCase()}" target="_blank" rel="noopener noreferrer" class="fa-link">
+          ${delayData.inboundFlightIATA || delayData.inboundFlightId.split('-')[0]} ↗
+        </a>
+        ${delayData.inboundDeparted !== null ? `
+          <br><span style="font-size: 0.9em; color: #666;">
+            ${delayData.inboundDeparted === false && delayData.inboundDelayImpact !== null ? '🛬 Landed' : delayData.inboundDeparted ? '✈️ In-flight' : '🛫 Not yet departed'}
+          </span>
+        ` : ''}
+      </div>
+    </div>
+    ${delayData.inboundExpectedArrival ? `
+    <div class="info-row">
+      <div class="info-label">Inbound Expected Arrival:</div>
+      <div class="info-value">${formatTime(new Date(delayData.inboundExpectedArrival).getTime() / 1000)}</div>
+    </div>
+    ` : ''}
     ` : ''}
     <div class="info-row">
       <div class="info-label">Confidence:</div>
-      <div class="info-value">${delayData.confidence}</div>
+      <div class="info-value"><span class="confidence-badge confidence-${delayData.confidence}">${delayData.confidence.toUpperCase()}</span></div>
     </div>
+    ${delayData.aircraftRegistration ? `
+    <div class="info-row">
+      <div class="info-label">Aircraft Registration:</div>
+      <div class="info-value">
+        <a href="https://www.flightradar24.com/data/aircraft/${delayData.aircraftRegistration.toLowerCase()}" target="_blank" rel="noopener noreferrer" class="fa-link">
+          ${delayData.aircraftRegistration} ↗
+        </a>
+      </div>
+    </div>
+    ` : ''}
   `;
 
   // Position map (placeholder)
@@ -350,7 +477,26 @@ function displayFlightInfo(flightData, delayData) {
 
 function formatTime(timestamp) {
   if (!timestamp) return 'N/A';
-  return new Date(timestamp * 1000).toLocaleString();
+
+  const date = new Date(timestamp * 1000);
+
+  // Format the time in the viewer's local timezone
+  const formattedTime = date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+
+  // Get timezone abbreviation
+  const timezoneAbbr = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+    .formatToParts(date)
+    .find(part => part.type === 'timeZoneName')?.value || '';
+
+  return `${formattedTime} ${timezoneAbbr}`;
 }
 
 function getStatusClass(status) {
@@ -363,3 +509,4 @@ function getStatusClass(status) {
 
 // Initialize
 checkSession();
+updateHistoryDisplay();

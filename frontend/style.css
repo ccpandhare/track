@@ -117,9 +117,13 @@ button:active {
 
 .search-form {
   display: grid;
-  grid-template-columns: 2fr 1fr auto;
+  grid-template-columns: 2fr minmax(150px, 1fr) auto;
   gap: 15px;
   align-items: start;
+}
+
+.search-form input[type="date"] {
+  min-width: 0; /* Allow shrinking below content size */
 }
 
 .card {
@@ -201,6 +205,61 @@ button:active {
 .delay-major {
   background: #f8d7da;
   color: #721c24;
+}
+
+.confidence-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.confidence-high {
+  background: #d4edda;
+  color: #155724;
+}
+
+.confidence-medium {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.confidence-low {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.fa-link {
+  color: #667eea;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.2s;
+}
+
+.fa-link:hover {
+  color: #5568d3;
+  text-decoration: underline;
+}
+
+.recent-flight-chip {
+  display: inline-block;
+  padding: 6px 12px;
+  margin: 5px 5px 5px 0;
+  background: #e9ecef;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+  font-size: 0.95em;
+}
+
+.recent-flight-chip:hover {
+  background: #667eea;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
 #map-container {

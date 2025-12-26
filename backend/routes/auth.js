@@ -10,6 +10,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import db from '../db.js';
+import { auditLog, AuditEvents } from '../utils/audit.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,6 +20,9 @@ export const authRouter = express.Router();
 const rpName = 'Flight Tracker';
 const rpID = process.env.RP_ID || 'localhost';
 const origin = process.env.ORIGIN || 'http://localhost:5173';
+
+console.log('[CONFIG] RP_ID:', rpID);
+console.log('[CONFIG] ORIGIN:', origin);
 
 // Store challenges temporarily (in production, use Redis)
 const challenges = new Map();
@@ -36,20 +40,56 @@ function loadAllowlist() {
   }
 }
 
-const allowedUsers = loadAllowlist();
+let allowedUsers = loadAllowlist();
+
+// Export function to reload allowlist (for hot-reload)
+export function reloadAllowlist() {
+  allowedUsers = loadAllowlist();
+  console.log('[SECURITY] Allowlist reloaded in auth routes');
+  return allowedUsers.size;
+}
 
 // Registration start
-authRouter.post('/register/start', (req, res) => {
-  const { username } = req.body;
+authRouter.post('/register/start', async (req, res) => {
+  const { username, inviteCode } = req.body;
 
   if (!username) {
     return res.status(400).json({ error: 'Username required' });
   }
 
+  if (!inviteCode) {
+    return res.status(400).json({ error: 'Invite code required' });
+  }
+
   // Check if username is in allowlist
   if (!allowedUsers.has(username)) {
+    auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'not_in_allowlist' });
     return res.status(403).json({ error: 'Registration is invite-only. This username is not authorized.' });
   }
+
+  // Verify invite code
+  const invite = db.prepare(`
+    SELECT code, username, used_at
+    FROM invite_codes
+    WHERE code = ?
+  `).get(inviteCode);
+
+  if (!invite) {
+    auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'invalid_invite_code' });
+    return res.status(403).json({ error: 'Invalid invite code' });
+  }
+
+  if (invite.used_at) {
+    auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'invite_code_already_used' });
+    return res.status(403).json({ error: 'This invite code has already been used' });
+  }
+
+  if (invite.username !== username) {
+    auditLog(AuditEvents.REGISTRATION_BLOCKED, username, false, { reason: 'invite_code_username_mismatch' });
+    return res.status(403).json({ error: 'This invite code is not valid for this username' });
+  }
+
+  auditLog(AuditEvents.REGISTRATION_ATTEMPT, username, true, { invite_code: inviteCode });
 
   // Check if user exists
   const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
@@ -59,10 +99,10 @@ authRouter.post('/register/start', (req, res) => {
 
   const userId = crypto.randomUUID();
 
-  const options = generateRegistrationOptions({
+  const options = await generateRegistrationOptions({
     rpName,
     rpID,
-    userID: userId,
+    userID: new Uint8Array(Buffer.from(userId.replace(/-/g, ''), 'hex')),
     userName: username,
     attestationType: 'none',
     authenticatorSelection: {
@@ -78,11 +118,17 @@ authRouter.post('/register/start', (req, res) => {
 
 // Registration finish
 authRouter.post('/register/finish', async (req, res) => {
-  const { userId, username, credential } = req.body;
+  const { userId, username, credential, inviteCode } = req.body;
 
   const expectedChallenge = challenges.get(userId);
   if (!expectedChallenge) {
     return res.status(400).json({ error: 'Invalid challenge' });
+  }
+
+  // Re-verify invite code hasn't been used in between
+  const invite = db.prepare('SELECT used_at FROM invite_codes WHERE code = ?').get(inviteCode);
+  if (!invite || invite.used_at) {
+    return res.status(403).json({ error: 'Invite code is no longer valid' });
   }
 
   try {
@@ -124,8 +170,16 @@ authRouter.post('/register/finish', async (req, res) => {
       Date.now()
     );
 
+    // Mark invite code as used
+    db.prepare(`
+      UPDATE invite_codes
+      SET used_at = ?, used_by_user_id = ?
+      WHERE code = ?
+    `).run(Date.now(), userId, inviteCode);
+
     challenges.delete(userId);
 
+    auditLog(AuditEvents.REGISTRATION_SUCCESS, username, true, { invite_code: inviteCode });
     res.json({ verified: true });
   } catch (error) {
     console.error('Registration error:', error);
@@ -134,12 +188,20 @@ authRouter.post('/register/finish', async (req, res) => {
 });
 
 // Authentication start
-authRouter.post('/login/start', (req, res) => {
+authRouter.post('/login/start', async (req, res) => {
   const { username } = req.body;
 
   if (!username) {
     return res.status(400).json({ error: 'Username required' });
   }
+
+  // SECURITY: Check if username is still in allowlist
+  if (!allowedUsers.has(username)) {
+    auditLog(AuditEvents.LOGIN_BLOCKED, username, false, { reason: 'not_in_allowlist' });
+    return res.status(403).json({ error: 'Access denied. Account not authorized.' });
+  }
+
+  auditLog(AuditEvents.LOGIN_ATTEMPT, username, true);
 
   const user = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (!user) {
@@ -152,7 +214,7 @@ authRouter.post('/login/start', (req, res) => {
     WHERE user_id = ?
   `).all(user.id);
 
-  const options = generateAuthenticationOptions({
+  const options = await generateAuthenticationOptions({
     rpID,
     allowCredentials: authenticators.map(auth => ({
       id: Buffer.from(auth.credential_id, 'base64'),
@@ -224,6 +286,8 @@ authRouter.post('/login/finish', async (req, res) => {
 
     const user = db.prepare('SELECT username FROM users WHERE id = ?').get(userId);
 
+    auditLog(AuditEvents.LOGIN_SUCCESS, user.username, true);
+
     res.json({
       verified: true,
       sessionId,
@@ -240,7 +304,11 @@ authRouter.post('/logout', (req, res) => {
   const sessionId = req.headers['x-session-id'];
 
   if (sessionId) {
+    const session = db.prepare('SELECT u.username FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?').get(sessionId);
     db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+    if (session) {
+      auditLog(AuditEvents.LOGOUT, session.username, true);
+    }
   }
 
   res.json({ success: true });

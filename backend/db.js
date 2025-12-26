@@ -35,6 +35,15 @@ db.exec(`
     expires_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS invite_codes (
+    code TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    created_at INTEGER NOT NULL,
+    used_at INTEGER,
+    used_by_user_id TEXT,
+    FOREIGN KEY (used_by_user_id) REFERENCES users(id)
+  );
 `);
 
 export default db;
