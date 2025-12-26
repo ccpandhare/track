@@ -23,7 +23,8 @@ const searchBtn = document.getElementById('search-btn');
 const flightNumberInput = document.getElementById('flight-number');
 const flightDateInput = document.getElementById('flight-date');
 const loadingDiv = document.getElementById('loading');
-const errorDiv = document.getElementById('error-message');
+const errorDiv = document.getElementById('error-message'); // Auth section error div
+const errorDivMain = document.getElementById('error-message-main'); // Main section error div
 const resultsSection = document.getElementById('results-section');
 
 // Set today's date as default
@@ -124,10 +125,15 @@ function updateHistoryDisplay() {
 
 // Show error message
 function showError(message) {
-  errorDiv.textContent = message;
-  errorDiv.style.display = 'block';
+  // Determine which section is visible and show error in that section
+  const isAuthVisible = authSection.style.display !== 'none';
+  const targetErrorDiv = isAuthVisible ? errorDiv : errorDivMain;
+
+  targetErrorDiv.textContent = message;
+  targetErrorDiv.style.display = 'block';
+
   setTimeout(() => {
-    errorDiv.style.display = 'none';
+    targetErrorDiv.style.display = 'none';
   }, 5000);
 }
 

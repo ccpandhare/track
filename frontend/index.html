@@ -11,6 +11,7 @@
     <!-- Auth Section -->
     <div id="auth-section" class="container">
       <h1>✈️ Flight Tracker</h1>
+      <div id="error-message" class="error" style="display: none;"></div>
       <div id="auth-forms">
         <div class="auth-form">
           <h2>Register</h2>
@@ -49,12 +50,12 @@
         <div id="recent-flights" style="margin-top: 15px;"></div>
       </div>
 
+      <div id="error-message-main" class="error" style="display: none;"></div>
+
       <div id="loading" style="display: none;">
         <div class="spinner"></div>
         <p>Loading flight data...</p>
       </div>
-
-      <div id="error-message" class="error" style="display: none;"></div>
 
       <div id="results-section" style="display: none;">
         <div id="delay-prediction" class="card">
