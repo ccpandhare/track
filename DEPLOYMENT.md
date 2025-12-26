@@ -44,21 +44,17 @@ NODE_ENV=production
 
 ### 3. Configure User Allowlist
 
+**IMPORTANT:** You don't need to manually edit the allowlist anymore! The invite code generation script automatically handles this.
+
+However, you still need to create the initial file:
+
 ```bash
 # Create allowlist from example
+cd /var/www/track/backend
 cp allowlist.example.json allowlist.json
-nano allowlist.json
 ```
 
-Add the usernames you want to allow:
-```json
-{
-  "allowedUsers": [
-    "chinmay",
-    "yourusername"
-  ]
-}
-```
+The allowlist will be automatically populated when you generate invite codes (see "Adding New Users" section below).
 
 ### 4. Install Dependencies
 
@@ -168,13 +164,64 @@ sudo npm run build
 
 No nginx restart needed as static files are updated in place.
 
-### Update Allowlist
+### Add New Users (Recommended Method)
+
+**IMPORTANT:** Use the automated invite generation script instead of manually editing the allowlist!
+
+```bash
+cd /var/www/track/backend
+node generate-invite.js <username>
+```
+
+**What this does:**
+1. ✅ Creates a unique, secure invite code in the database
+2. ✅ **Automatically adds the username to allowlist.json**
+3. ✅ Shows the invite code to send to the user
+4. ✅ No server restart needed (hot-reload)
+
+**Example:**
+```bash
+cd /var/www/track/backend
+node generate-invite.js alice
+
+# Output:
+# ✅ Invite code generated successfully!
+#
+# Username:    alice
+# Invite Code: 9tAuYWyUHafzlY82tOwLbQ
+#
+# ✅ User automatically added to allowlist
+#
+# Send this code to alice to complete registration at:
+# https://track.chinmaypandhare.uk
+```
+
+**Send to the user:**
+- Username: `alice`
+- Invite Code: `9tAuYWyUHafzlY82tOwLbQ`
+- URL: https://track.chinmaypandhare.uk
+
+**Security Features:**
+- Each invite code is single-use
+- Codes are tied to a specific username
+- Codes cannot be reused or transferred
+- Automatic audit logging of all registration attempts
+
+### Manual Allowlist Update (Not Recommended)
+
+Only use this if you need to remove a user:
 
 ```bash
 cd /var/www/track/backend
 sudo nano allowlist.json
-# No restart needed - will be loaded on next registration attempt
+# Remove the username from the array
+# No restart needed - changes are hot-reloaded
 ```
+
+**Note:** Simply removing from allowlist will:
+- Block future login attempts
+- Invalidate existing sessions on next API call
+- Prevent registration even with valid invite code
 
 ## Monitoring
 
@@ -254,11 +301,66 @@ sudo certbot renew
 sudo certbot renew --dry-run
 ```
 
+### Registration Issues
+
+**Problem: "Registration is invite-only. This username is not authorized."**
+
+This means the user is not in the allowlist. Fix:
+```bash
+cd /var/www/track/backend
+node generate-invite.js <username>
+```
+
+This will automatically add them to the allowlist AND create their invite code.
+
+**Problem: "Invalid invite code. Please check your code and try again."**
+
+- The invite code was typed incorrectly (copy-paste recommended)
+- The code doesn't exist in the database
+- Fix: Generate a new invite code using the script above
+
+**Problem: "This invite code has already been used."**
+
+- The invite code was already used to register an account
+- Fix: Generate a new invite code for the user
+
+**Problem: "This invite code is for username 'X'. Please use the correct username."**
+
+- The username doesn't match the invite code
+- Each invite code is tied to a specific username
+- Fix: Use the exact username the invite was generated for (case-sensitive)
+
+**Problem: "Your account has not been authorized yet."**
+
+- The invite code is valid but the user is not in the allowlist
+- This should not happen if you used `generate-invite.js`
+- Fix: Manually add the username to `allowlist.json` or re-run `generate-invite.js`
+
+**Checking invite codes:**
+```bash
+cd /var/www/track/backend
+node -e "
+import('better-sqlite3').then(({default: Database}) => {
+  const db = new Database('./users.db');
+  const codes = db.prepare('SELECT code, username, created_at, used_at FROM invite_codes WHERE username = ?').all('USERNAME_HERE');
+  console.log(JSON.stringify(codes, null, 2));
+  db.close();
+});
+"
+```
+
+**Viewing audit logs for registration attempts:**
+```bash
+sudo journalctl -u flight-tracker | grep REGISTRATION
+```
+
 ### Passkey Registration Not Working
 
 1. Make sure you're accessing via HTTPS (required for WebAuthn)
 2. Check that RP_ID and ORIGIN in `.env` match your domain
-3. Verify username is in `allowlist.json`
+3. Verify username has a valid invite code (run `generate-invite.js`)
+4. Use a modern browser (Chrome, Edge, Safari, Firefox)
+5. Ensure device supports WebAuthn/passkeys
 
 ## Security Checklist
 

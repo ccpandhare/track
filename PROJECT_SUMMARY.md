@@ -33,13 +33,16 @@ A secure web application for tracking flights using FlightRadar24 API with passk
 - Uses WebAuthn/FIDO2 standard
 - Biometric or hardware key authentication
 - Session management with secure tokens
-- **Invite-only registration** via allowlist
+- **Invite-only registration** via secure invite codes
+- Two-layer security: invite codes + allowlist
+- Automated invite code generation with `generate-invite.js`
 
 ### 2. Flight Tracking
 - Search flights by flight number and date
 - Real-time flight status
 - Departure and arrival information
 - Flight route details
+- FlightAware AeroAPI integration
 
 ### 3. Aircraft Information
 - Aircraft registration number
@@ -48,20 +51,35 @@ A secure web application for tracking flights using FlightRadar24 API with passk
 - Current altitude, speed, and heading
 - Airline information
 
-### 4. Delay Prediction
-- Current delay calculation
-- Predicted arrival delay
-- Delay reason analysis
-- Confidence indicators
-- Visual delay status (on-time, minor, major)
+### 4. Inbound Aircraft Tracking
+- **NEW:** Dedicated section showing inbound flight details
+- Displays the previous flight using the same aircraft
+- Complete inbound flight information:
+  - Flight number, route, and status
+  - Scheduled and actual times
+  - Delay information
+  - Aircraft registration
+- Always visible when data is available
+- Helps understand delay propagation
 
-### 5. Security Features
+### 5. Delay Prediction
+- Current delay calculation
+- Predicted arrival delay based on inbound aircraft
+- Delay reason analysis (inbound delay, departure delay, etc.)
+- Confidence indicators (high/medium/low)
+- Visual delay status (on-time, minor, major)
+- Inbound aircraft delay impact tracking
+
+### 6. Security Features
 - API key stored server-side only
 - Not exposed to frontend
 - Environment variable based configuration
-- User allowlist for invite-only access
+- User allowlist with hot-reload (no restart needed)
 - HTTPS required for production
 - Security headers configured in nginx
+- Rate limiting (5 auth attempts/15min, 30 API requests/min)
+- Comprehensive audit logging
+- Session invalidation on user removal from allowlist
 
 ## File Structure
 
@@ -161,19 +179,53 @@ PORT=3000                                # Backend port
 NODE_ENV=production                      # Environment (development/production)
 ```
 
-## User Allowlist Configuration
+## User Registration System
 
-File: `backend/allowlist.json` (not committed to git)
+### Invite Code Generation
+
+The app uses a two-layer security system for user registration:
+
+1. **Invite Codes** - Stored in SQLite database, one per user
+2. **Allowlist** - JSON file with authorized usernames
+
+**To add a new user:**
+```bash
+cd backend
+node generate-invite.js <username>
+```
+
+This automatically:
+- Creates a unique invite code in the database
+- Adds username to `allowlist.json`
+- Shows the code to send to the user
+
+**Database Table: `invite_codes`**
+- `code` - Unique invite code (base64url, 16 bytes)
+- `username` - Associated username (unique)
+- `created_at` - Timestamp
+- `used_at` - Timestamp when used (null if unused)
+- `used_by_user_id` - User ID who used it
+
+### Allowlist Configuration
+
+File: `backend/allowlist.json` (not committed to git, auto-managed)
 
 ```json
 {
   "allowedUsers": [
     "chinmay",
+    "regina",
     "approved_username"
   ],
   "comment": "Only these usernames can register"
 }
 ```
+
+**Features:**
+- Hot-reload: Changes take effect immediately (no restart needed)
+- Auto-populated by `generate-invite.js`
+- Checked on registration, login, and every API call
+- Remove users to revoke access (invalidates sessions)
 
 ## Deployment Checklist
 

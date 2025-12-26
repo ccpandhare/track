@@ -90,13 +90,44 @@ sudo ./setup-nginx.sh
 sudo ./setup-ssl.sh
 ```
 
-## First User Registration
+## Adding Users & Registration
 
-1. Open the application in your browser
-2. Enter a username that's in your `allowlist.json`
-3. Click "Register with Passkey"
-4. Follow your browser/device prompts to create a passkey
-5. After registration, use "Login with Passkey" to sign in
+### Generate Invite Code (Administrator)
+
+```bash
+cd backend
+node generate-invite.js <username>
+```
+
+This will:
+- Create a unique invite code
+- Automatically add the username to the allowlist
+- Display the code to send to the user
+
+Example output:
+```
+✅ Invite code generated successfully!
+
+Username:    alice
+Invite Code: 9tAuYWyUHafzlY82tOwLbQ
+
+✅ User automatically added to allowlist
+```
+
+### User Registration
+
+Send the user:
+1. Their username (e.g., `alice`)
+2. The invite code (e.g., `9tAuYWyUHafzlY82tOwLbQ`)
+3. The URL: https://track.chinmaypandhare.uk
+
+They should:
+1. Open the application in their browser
+2. Enter their **exact username**
+3. Enter the **invite code** (copy-paste recommended)
+4. Click "Register with Passkey"
+5. Follow browser prompts to create a passkey (Face ID, Touch ID, Windows Hello, etc.)
+6. After registration, use "Login with Passkey" to sign in
 
 ## Testing Flight Search
 
@@ -115,22 +146,39 @@ You need a FlightRadar24 API key. If you don't have one:
 
 ## Troubleshooting
 
-**"Registration is invite-only"**
-- Make sure your username is in `backend/allowlist.json`
+### Registration Issues
 
-**"Could not load allowlist.json"**
-- Copy `allowlist.example.json` to `allowlist.json`
-- Restart the backend server
+**"Invalid invite code"**
+- Double-check the code (copy-paste recommended)
+- Make sure you're using the complete code
+- Generate a new code if needed: `node generate-invite.js <username>`
+
+**"This invite code is for username 'X'"**
+- You must use the exact username the code was generated for
+- Usernames are case-sensitive
+- Ask administrator for the correct username
+
+**"This invite code has already been used"**
+- Invite codes are single-use only
+- Contact administrator for a new invite code
+
+**"Your account has not been authorized yet"**
+- Your invite code is valid but you're not in the allowlist
+- This shouldn't happen if `generate-invite.js` was used
+- Contact administrator to check `allowlist.json`
+
+### Other Issues
 
 **Passkey not working**
 - Use a modern browser (Chrome, Edge, Safari, Firefox)
-- For production, HTTPS is required
-- Make sure your device supports WebAuthn (most do)
+- For production, HTTPS is required (localhost works for dev)
+- Make sure your device supports WebAuthn (most modern devices do)
 
 **Flight not found**
-- Verify your FlightRadar24 API key is correct
-- Check the flight number format (e.g., BA123, not BA 123)
+- Using FlightAware AeroAPI (not FlightRadar24)
+- Check the flight number format (e.g., 6E5197, not 6E 5197)
 - Make sure the flight exists for the selected date
+- Verify your API key is correct in `.env`
 
 **Backend not connecting**
 - Check backend is running on port 3000
