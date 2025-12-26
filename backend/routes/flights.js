@@ -312,28 +312,30 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
       console.log(`[PREDICTION] Looking up route history for aircraft ${flight.registration} to find inbound flight for ${flight.ident}`);
       try {
         // Get all recent flights for this aircraft registration
-        const aircraftFlightsData = await callAeroAPI(`/flights/${flight.registration}`, {
-          type: 'reg'
-        });
+        // The /flights/{ident} endpoint works for registrations too
+        const aircraftFlightsData = await callAeroAPI(`/flights/${flight.registration}`);
 
         const aircraftFlights = aircraftFlightsData.flights || [];
 
         if (aircraftFlights.length === 0) {
           console.log(`[PREDICTION] No flight history found for aircraft ${flight.registration}`);
         } else {
-          // Sort by scheduled arrival time (descending) to find the most recent previous flight
-          const sortedFlights = aircraftFlights
-            .filter(f => f.scheduled_in) // Only flights with scheduled arrival
-            .sort((a, b) => new Date(b.scheduled_in) - new Date(a.scheduled_in));
-
           // Find the flight that landed just before this flight's departure
           const ourScheduledOff = new Date(flight.scheduled_off);
-          const inboundFlight = sortedFlights.find(f => {
-            const scheduledIn = new Date(f.scheduled_in);
-            // The inbound flight should arrive before our flight departs
-            // and should be different from our current flight
-            return scheduledIn < ourScheduledOff && f.fa_flight_id !== flight.fa_flight_id;
-          });
+
+          // Filter flights that arrive before our flight departs and are not our current flight
+          const candidateFlights = aircraftFlights
+            .filter(f => {
+              if (!f.scheduled_in || f.fa_flight_id === flight.fa_flight_id) return false;
+              const scheduledIn = new Date(f.scheduled_in);
+              return scheduledIn < ourScheduledOff;
+            });
+
+          // Sort by scheduled arrival time (descending) to get the most recent arrival
+          candidateFlights.sort((a, b) => new Date(b.scheduled_in) - new Date(a.scheduled_in));
+
+          // The first flight in this sorted list is the immediate preceding flight
+          const inboundFlight = candidateFlights[0];
 
           if (!inboundFlight) {
             console.log(`[PREDICTION] No previous flight found for aircraft ${flight.registration} before ${flight.ident}`);
