@@ -1,0 +1,16 @@
+{
+  "name": "flight-tracker-frontend",
+  "version": "1.0.0",
+  "description": "Flight tracking frontend",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@simplewebauthn/browser": "^9.0.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.11"
+  }
+}

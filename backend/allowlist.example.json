@@ -1,0 +1,7 @@
+{
+  "allowedUsers": [
+    "yourusername",
+    "anotherusername"
+  ],
+  "comment": "Add usernames that are allowed to register. Copy this file to allowlist.json and add your approved usernames."
+}

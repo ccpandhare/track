@@ -1,0 +1,9 @@
+node_modules/
+.env
+*.db
+*.log
+dist/
+backend/.env
+backend/allowlist.json
+frontend/dist/
+.DS_Store
