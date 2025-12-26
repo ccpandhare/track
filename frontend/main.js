@@ -294,7 +294,17 @@ searchBtn.addEventListener('click', async () => {
       apiCall(`/flights/delay-prediction/${flightId}`)
     ]);
 
-    displayFlightInfo(flightDetails, delayPrediction, flightId);
+    // Get inbound flight details if available
+    let inboundFlightDetails = null;
+    if (delayPrediction.inboundFlightId) {
+      try {
+        inboundFlightDetails = await apiCall(`/flights/details/${delayPrediction.inboundFlightId}`);
+      } catch (error) {
+        console.error('Could not fetch inbound flight details:', error);
+      }
+    }
+
+    displayFlightInfo(flightDetails, delayPrediction, flightId, inboundFlightDetails);
 
     // Save to history
     saveFlightToHistory(flightNumber, flight);
@@ -308,7 +318,7 @@ searchBtn.addEventListener('click', async () => {
   }
 });
 
-function displayFlightInfo(flightData, delayData, flightId) {
+function displayFlightInfo(flightData, delayData, flightId, inboundFlightData = null) {
   const flight = flightData.result.response;
   const aircraft = flight.aircraft;
   const status = flight.status;
@@ -405,7 +415,7 @@ function displayFlightInfo(flightData, delayData, flightId) {
     ${delayData.inboundDelayImpact ? `
     <div class="info-row" style="background-color: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
       <div class="info-label">⚠️ Inbound Aircraft Impact:</div>
-      <div class="info-value"><strong>${delayData.inboundDelayImpact} minutes delay</strong></div>
+      <div class="info-value"><strong>${delayData.inboundDelayImpact > 0 ? '+' : ''}${delayData.inboundDelayImpact} minutes</strong></div>
     </div>
     ` : ''}
     <div class="info-row">
@@ -422,27 +432,6 @@ function displayFlightInfo(flightData, delayData, flightId) {
       <div class="info-value"><strong>${delayData.delayReason}</strong></div>
     </div>
     ` : ''}
-    ${delayData.inboundFlightId ? `
-    <div class="info-row">
-      <div class="info-label">Inbound Flight:</div>
-      <div class="info-value">
-        <a href="https://www.flightradar24.com/data/flights/${(delayData.inboundFlightIATA || delayData.inboundFlightId.split('-')[0]).toLowerCase()}" target="_blank" rel="noopener noreferrer" class="fa-link">
-          ${delayData.inboundFlightIATA || delayData.inboundFlightId.split('-')[0]} ↗
-        </a>
-        ${delayData.inboundDeparted !== null ? `
-          <br><span style="font-size: 0.9em; color: #666;">
-            ${delayData.inboundDeparted === false && delayData.inboundDelayImpact !== null ? '🛬 Landed' : delayData.inboundDeparted ? '✈️ In-flight' : '🛫 Not yet departed'}
-          </span>
-        ` : ''}
-      </div>
-    </div>
-    ${delayData.inboundExpectedArrival ? `
-    <div class="info-row">
-      <div class="info-label">Inbound Expected Arrival:</div>
-      <div class="info-value">${formatTime(new Date(delayData.inboundExpectedArrival).getTime() / 1000)}</div>
-    </div>
-    ` : ''}
-    ` : ''}
     <div class="info-row">
       <div class="info-label">Confidence:</div>
       <div class="info-value"><span class="confidence-badge confidence-${delayData.confidence}">${delayData.confidence.toUpperCase()}</span></div>
@@ -458,6 +447,179 @@ function displayFlightInfo(flightData, delayData, flightId) {
     </div>
     ` : ''}
   `;
+
+  // Inbound Aircraft Information - Always show if available
+  const inboundAircraftCard = document.getElementById('inbound-aircraft');
+  const inboundDetailsDiv = document.getElementById('inbound-details');
+
+  if (inboundFlightData && delayData.inboundFlightId) {
+    const inboundFlight = inboundFlightData.result.response;
+    const inboundStatus = inboundFlight.status;
+
+    // Calculate inbound delays
+    let inboundDepartureDelay = 0;
+    let inboundArrivalDelay = 0;
+
+    if (inboundFlight.status.generic?.actual?.departure && inboundFlight.status.generic?.scheduled?.departure) {
+      inboundDepartureDelay = Math.round((inboundFlight.status.generic.actual.departure - inboundFlight.status.generic.scheduled.departure) / 60);
+    } else if (inboundFlight.status.generic?.estimated?.departure && inboundFlight.status.generic?.scheduled?.departure) {
+      inboundDepartureDelay = Math.round((inboundFlight.status.generic.estimated.departure - inboundFlight.status.generic.scheduled.departure) / 60);
+    }
+
+    if (inboundFlight.status.generic?.actual?.arrival && inboundFlight.status.generic?.scheduled?.arrival) {
+      inboundArrivalDelay = Math.round((inboundFlight.status.generic.actual.arrival - inboundFlight.status.generic.scheduled.arrival) / 60);
+    } else if (inboundFlight.status.generic?.estimated?.arrival && inboundFlight.status.generic?.scheduled?.arrival) {
+      inboundArrivalDelay = Math.round((inboundFlight.status.generic.estimated.arrival - inboundFlight.status.generic.scheduled.arrival) / 60);
+    }
+
+    const inboundMaxDelay = Math.max(Math.abs(inboundArrivalDelay), Math.abs(inboundDepartureDelay));
+    const inboundDelayClass = inboundMaxDelay <= 0 ? 'delay-none' : (inboundMaxDelay < 30 ? 'delay-minor' : 'delay-major');
+
+    inboundDetailsDiv.innerHTML = `
+      <div class="info-row" style="background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+        <div style="font-size: 0.9em; color: #1976d2;">
+          <strong>ℹ️ This aircraft will operate your searched flight</strong>
+        </div>
+      </div>
+
+      <div class="delay-indicator ${inboundDelayClass}" style="font-size: 0.9em; margin-bottom: 15px;">
+        ${inboundMaxDelay > 0 ? `⚠️ Delayed` : '✅ On Time'}
+      </div>
+
+      <div class="info-row">
+        <div class="info-label">Flight Number:</div>
+        <div class="info-value">
+          <a href="https://www.flightradar24.com/data/flights/${(delayData.inboundFlightIATA || delayData.inboundFlightId.split('-')[0]).toLowerCase()}" target="_blank" rel="noopener noreferrer" class="fa-link">
+            ${delayData.inboundFlightIATA || delayData.inboundFlightId.split('-')[0]} ↗
+          </a>
+        </div>
+      </div>
+
+      <div class="info-row">
+        <div class="info-label">Status:</div>
+        <div class="info-value">
+          <span class="status-badge ${getStatusClass(inboundStatus.text)}">${inboundStatus.text || 'Unknown'}</span>
+          ${delayData.inboundDeparted !== null ? `
+            <br><span style="font-size: 0.9em; color: #666;">
+              ${delayData.inboundDeparted === false && delayData.inboundDelayImpact !== null ? '🛬 Landed' : delayData.inboundDeparted ? '✈️ In-flight' : '🛫 Not yet departed'}
+            </span>
+          ` : ''}
+        </div>
+      </div>
+
+      <div class="info-row">
+        <div class="info-label">From:</div>
+        <div class="info-value">${inboundFlight.airport.origin?.name || 'N/A'} (${inboundFlight.airport.origin?.code?.iata || 'N/A'})</div>
+      </div>
+
+      <div class="info-row">
+        <div class="info-label">To:</div>
+        <div class="info-value">${inboundFlight.airport.destination?.name || 'N/A'} (${inboundFlight.airport.destination?.code?.iata || 'N/A'})</div>
+      </div>
+
+      <div class="info-row">
+        <div class="info-label">Scheduled Departure:</div>
+        <div class="info-value">${formatTime(inboundStatus.generic?.scheduled?.departure)}</div>
+      </div>
+
+      <div class="info-row">
+        <div class="info-label">Estimated/Actual Departure:</div>
+        <div class="info-value">${formatTime(inboundStatus.generic?.estimated?.departure || inboundStatus.generic?.actual?.departure)}</div>
+      </div>
+
+      <div class="info-row">
+        <div class="info-label">Scheduled Arrival:</div>
+        <div class="info-value">${formatTime(inboundStatus.generic?.scheduled?.arrival)}</div>
+      </div>
+
+      <div class="info-row">
+        <div class="info-label">Estimated/Actual Arrival:</div>
+        <div class="info-value">${formatTime(inboundStatus.generic?.estimated?.arrival || inboundStatus.generic?.actual?.arrival)}</div>
+      </div>
+
+      ${inboundDepartureDelay !== 0 || inboundArrivalDelay !== 0 ? `
+      <div class="info-row">
+        <div class="info-label">Departure Delay:</div>
+        <div class="info-value">${inboundDepartureDelay !== 0 ? `${inboundDepartureDelay > 0 ? '+' : ''}${inboundDepartureDelay} minutes` : 'On time'}</div>
+      </div>
+      <div class="info-row">
+        <div class="info-label">Arrival Delay:</div>
+        <div class="info-value">${inboundArrivalDelay !== 0 ? `${inboundArrivalDelay > 0 ? '+' : ''}${inboundArrivalDelay} minutes` : 'On time'}</div>
+      </div>
+      ` : ''}
+
+      <div class="info-row">
+        <div class="info-label">Aircraft Registration:</div>
+        <div class="info-value">
+          <a href="https://www.flightradar24.com/data/aircraft/${(inboundFlight.aircraft.registration || delayData.aircraftRegistration || 'N/A').toLowerCase()}" target="_blank" rel="noopener noreferrer" class="fa-link">
+            ${inboundFlight.aircraft.registration || delayData.aircraftRegistration || 'N/A'} ↗
+          </a>
+        </div>
+      </div>
+
+      <div class="info-row">
+        <div class="info-label">Aircraft Model:</div>
+        <div class="info-value">${inboundFlight.aircraft.model?.text || 'N/A'}</div>
+      </div>
+    `;
+
+    inboundAircraftCard.style.display = 'block';
+  } else if (delayData.inboundFlightId) {
+    // Show basic info even if we couldn't fetch full details
+    inboundDetailsDiv.innerHTML = `
+      <div class="info-row" style="background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+        <div style="font-size: 0.9em; color: #1976d2;">
+          <strong>ℹ️ This aircraft will operate your searched flight</strong>
+        </div>
+      </div>
+
+      <div class="info-row">
+        <div class="info-label">Flight Number:</div>
+        <div class="info-value">
+          <a href="https://www.flightradar24.com/data/flights/${(delayData.inboundFlightIATA || delayData.inboundFlightId.split('-')[0]).toLowerCase()}" target="_blank" rel="noopener noreferrer" class="fa-link">
+            ${delayData.inboundFlightIATA || delayData.inboundFlightId.split('-')[0]} ↗
+          </a>
+        </div>
+      </div>
+
+      ${delayData.inboundDeparted !== null ? `
+      <div class="info-row">
+        <div class="info-label">Status:</div>
+        <div class="info-value">
+          ${delayData.inboundDeparted === false && delayData.inboundDelayImpact !== null ? '🛬 Landed' : delayData.inboundDeparted ? '✈️ In-flight' : '🛫 Not yet departed'}
+        </div>
+      </div>
+      ` : ''}
+
+      ${delayData.inboundExpectedArrival ? `
+      <div class="info-row">
+        <div class="info-label">Expected Arrival:</div>
+        <div class="info-value">${formatTime(new Date(delayData.inboundExpectedArrival).getTime() / 1000)}</div>
+      </div>
+      ` : ''}
+
+      ${delayData.aircraftRegistration ? `
+      <div class="info-row">
+        <div class="info-label">Aircraft Registration:</div>
+        <div class="info-value">
+          <a href="https://www.flightradar24.com/data/aircraft/${delayData.aircraftRegistration.toLowerCase()}" target="_blank" rel="noopener noreferrer" class="fa-link">
+            ${delayData.aircraftRegistration} ↗
+          </a>
+        </div>
+      </div>
+      ` : ''}
+
+      <div class="info-row" style="margin-top: 10px; padding: 10px; background-color: #fff3cd; border-radius: 5px;">
+        <div style="font-size: 0.85em; color: #856404;">
+          ⚠️ Could not load full inbound flight details. Click the flight number link above for more information.
+        </div>
+      </div>
+    `;
+
+    inboundAircraftCard.style.display = 'block';
+  } else {
+    inboundAircraftCard.style.display = 'none';
+  }
 
   // Position map (placeholder)
   const mapContainer = document.getElementById('map-container');

@@ -140,6 +140,11 @@ button:active {
   color: #667eea;
 }
 
+#inbound-aircraft {
+  border-left: 4px solid #667eea;
+  background: linear-gradient(to right, #f0f4ff, #f8f9fa);
+}
+
 .info-row {
   display: grid;
   grid-template-columns: 200px 1fr;
