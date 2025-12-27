@@ -121,23 +121,16 @@ button:active {
   display: grid;
   grid-template-columns: 2fr minmax(150px, 1fr) auto;
   gap: 15px;
-  align-items: stretch; /* Make all items same height */
+  align-items: center; /* Center align all items */
 }
 
-.search-form input[type="date"] {
-  min-width: 0; /* Allow shrinking below content size */
-  height: 44px; /* Match button height: 16px font + 12px top + 12px bottom + 4px borders */
-  box-sizing: border-box;
-}
-
+.search-form input[type="date"],
 .search-form input[type="text"] {
-  height: 44px; /* Match button height for consistency */
-  box-sizing: border-box;
+  margin-bottom: 0; /* Remove margin in search form, grid gap handles spacing */
 }
 
 .search-form button {
-  height: 44px; /* Explicit height for alignment */
-  box-sizing: border-box;
+  margin-bottom: 0;
 }
 
 .card {
