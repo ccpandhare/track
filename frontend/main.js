@@ -234,7 +234,17 @@ function getFlightHistory() {
 function deleteFlightFromHistory(flightNumber, flightDate) {
   try {
     const history = JSON.parse(localStorage.getItem('flightHistory') || '[]');
-    const filtered = history.filter(f => !(f.flightNumber === flightNumber && f.flightDate === flightDate));
+    const filtered = history.filter(f => {
+      // Match flight number
+      if (f.flightNumber !== flightNumber) return true;
+
+      // For backward compatibility: treat undefined, null, and empty string as equivalent
+      const storedDate = f.flightDate || '';
+      const deleteDate = flightDate || '';
+
+      // Keep the flight if dates don't match
+      return storedDate !== deleteDate;
+    });
     localStorage.setItem('flightHistory', JSON.stringify(filtered));
     updateHistoryDisplay();
   } catch (error) {
