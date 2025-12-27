@@ -391,6 +391,7 @@ button:active {
   align-items: center;
   margin-bottom: 12px;
   padding-bottom: 8px;
+  padding-right: 40px; /* Make room for delete button */
   border-bottom: 1px solid #b3e5fc;
 }
 
