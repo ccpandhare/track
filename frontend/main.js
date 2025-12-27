@@ -2,7 +2,11 @@ import {
   startRegistration,
   startAuthentication,
 } from '@simplewebauthn/browser';
-import { BrowserPDF417Reader } from '@zxing/library';
+import {
+  BrowserMultiFormatReader,
+  BarcodeFormat,
+  DecodeHintType
+} from '@zxing/library';
 import { decode } from 'bcbp';
 
 const API_URL = window.location.hostname === 'localhost'
@@ -1177,18 +1181,23 @@ barcodeFileInput.addEventListener('change', async (e) => {
     barcodeCanvas.height = img.height;
     ctx.drawImage(img, 0, 0);
 
-    // Decode PDF417 barcode
-    const codeReader = new BrowserPDF417Reader();
+    // Decode PDF417 barcode using ZXing
+    const hints = new Map();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.PDF_417]);
+    hints.set(DecodeHintType.TRY_HARDER, true);
+
+    const codeReader = new BrowserMultiFormatReader(hints);
     const result = await codeReader.decodeFromCanvas(barcodeCanvas);
 
-    if (!result || !result.text) {
+    if (!result || !result.getText()) {
       throw new Error('No barcode found in image');
     }
 
-    console.log('Raw barcode data:', result.text);
+    const barcodeText = result.getText();
+    console.log('Raw barcode data:', barcodeText);
 
     // Parse BCBP data
-    const boardingPass = decode(result.text);
+    const boardingPass = decode(barcodeText);
     console.log('Parsed boarding pass:', boardingPass);
 
     // Show confirmation UI
