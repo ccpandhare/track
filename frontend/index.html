@@ -56,7 +56,12 @@
       </header>
 
       <div class="search-section">
-        <h2>Search Flight</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h2 style="margin-bottom: 0;">Search Flight</h2>
+          <button id="scan-boarding-pass-btn" class="scan-btn" title="Scan Boarding Pass">
+            📷 Scan Boarding Pass
+          </button>
+        </div>
         <div class="search-form">
           <div style="position: relative;">
             <input type="text" id="flight-number" placeholder="Flight Number (e.g., 6E6744)" list="flight-history-list" />
@@ -99,6 +104,22 @@
         <div id="position-map" class="card">
           <h2>Current Position</h2>
           <div id="map-container"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Boarding Pass Scanner Modal -->
+    <div id="scanner-modal" class="modal" style="display: none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Scan Boarding Pass</h2>
+          <button id="close-scanner-btn" class="close-modal-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="color: #666; margin-bottom: 15px;">Upload an image of your boarding pass barcode (PDF417)</p>
+          <input type="file" id="barcode-file-input" accept="image/*" capture="environment" style="margin-bottom: 15px;" />
+          <div id="scanner-status" style="margin-top: 15px; padding: 10px; border-radius: 6px; display: none;"></div>
+          <canvas id="barcode-canvas" style="display: none; max-width: 100%;"></canvas>
         </div>
       </div>
     </div>

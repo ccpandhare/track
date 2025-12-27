@@ -2,6 +2,8 @@ import {
   startRegistration,
   startAuthentication,
 } from '@simplewebauthn/browser';
+import { BrowserPDF417Reader } from '@zxing/library';
+import { decode } from 'bcbp';
 
 const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3000/api'
@@ -136,6 +138,12 @@ const loadingDiv = document.getElementById('loading');
 const errorDiv = document.getElementById('error-message'); // Auth section error div
 const errorDivMain = document.getElementById('error-message-main'); // Main section error div
 const resultsSection = document.getElementById('results-section');
+const scanBoardingPassBtn = document.getElementById('scan-boarding-pass-btn');
+const scannerModal = document.getElementById('scanner-modal');
+const closeScannerBtn = document.getElementById('close-scanner-btn');
+const barcodeFileInput = document.getElementById('barcode-file-input');
+const scannerStatus = document.getElementById('scanner-status');
+const barcodeCanvas = document.getElementById('barcode-canvas');
 
 // Set today's date as default
 flightDateInput.valueAsDate = new Date();
@@ -1130,6 +1138,194 @@ function getStatusClass(status) {
   if (statusLower.includes('delay')) return 'status-delayed';
   if (statusLower.includes('scheduled') || statusLower.includes('landed') || statusLower.includes('en-route')) return 'status-on-time';
   return 'status-unknown';
+}
+
+// ==================== BOARDING PASS SCANNER ====================
+
+// Show scanner modal
+scanBoardingPassBtn.addEventListener('click', () => {
+  scannerModal.style.display = 'flex';
+  barcodeFileInput.value = '';
+  scannerStatus.style.display = 'none';
+  scannerStatus.innerHTML = '';
+});
+
+// Close scanner modal
+closeScannerBtn.addEventListener('click', () => {
+  scannerModal.style.display = 'none';
+});
+
+// Close modal when clicking outside
+scannerModal.addEventListener('click', (e) => {
+  if (e.target === scannerModal) {
+    scannerModal.style.display = 'none';
+  }
+});
+
+// Handle file selection
+barcodeFileInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  try {
+    showScannerStatus('📷 Processing image...', 'info');
+
+    // Load image to canvas
+    const img = await loadImage(file);
+    const ctx = barcodeCanvas.getContext('2d');
+    barcodeCanvas.width = img.width;
+    barcodeCanvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+
+    // Decode PDF417 barcode
+    const codeReader = new BrowserPDF417Reader();
+    const result = await codeReader.decodeFromCanvas(barcodeCanvas);
+
+    if (!result || !result.text) {
+      throw new Error('No barcode found in image');
+    }
+
+    console.log('Raw barcode data:', result.text);
+
+    // Parse BCBP data
+    const boardingPass = decode(result.text);
+    console.log('Parsed boarding pass:', boardingPass);
+
+    // Show confirmation UI
+    showBoardingPassConfirmation(boardingPass);
+
+  } catch (error) {
+    console.error('Barcode scanning error:', error);
+    showScannerStatus(`❌ Error: ${error.message}. Please try again with a clearer image.`, 'error');
+  }
+});
+
+// Helper: Load image from file
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Helper: Show scanner status message
+function showScannerStatus(message, type) {
+  scannerStatus.style.display = 'block';
+  scannerStatus.innerHTML = message;
+
+  if (type === 'error') {
+    scannerStatus.style.background = '#fee';
+    scannerStatus.style.color = '#c33';
+    scannerStatus.style.border = '1px solid #fcc';
+  } else if (type === 'success') {
+    scannerStatus.style.background = '#efe';
+    scannerStatus.style.color = '#3c3';
+    scannerStatus.style.border = '1px solid #cfc';
+  } else {
+    scannerStatus.style.background = '#eef';
+    scannerStatus.style.color = '#33c';
+    scannerStatus.style.border = '1px solid #ccf';
+  }
+}
+
+// Show boarding pass confirmation UI
+function showBoardingPassConfirmation(boardingPass) {
+  const leg = boardingPass.legs[0]; // Use first leg
+
+  // Parse date from Julian date (format: DDD where DDD is day of year)
+  const flightDate = parseJulianDate(leg.flightDate);
+
+  // Format for display
+  const displayDate = flightDate.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  // Format for input (YYYY-MM-DD)
+  const inputDate = flightDate.toISOString().split('T')[0];
+
+  const html = `
+    <div class="parsed-result">
+      <h3>✅ Boarding Pass Scanned</h3>
+      <div class="result-item">
+        <div class="result-label">Passenger Name:</div>
+        <div class="result-value">${boardingPass.passengerName || 'N/A'}</div>
+      </div>
+      <div class="result-item">
+        <div class="result-label">Flight Number:</div>
+        <div class="result-value">${leg.operatingCarrierDesignator}${leg.flightNumber}</div>
+      </div>
+      <div class="result-item">
+        <div class="result-label">Date:</div>
+        <div class="result-value">${displayDate}</div>
+      </div>
+      <div class="result-item">
+        <div class="result-label">From:</div>
+        <div class="result-value">${leg.departureAirport}</div>
+      </div>
+      <div class="result-item">
+        <div class="result-label">To:</div>
+        <div class="result-value">${leg.arrivalAirport}</div>
+      </div>
+      ${leg.seat ? `
+        <div class="result-item">
+          <div class="result-label">Seat:</div>
+          <div class="result-value">${leg.seat}</div>
+        </div>
+      ` : ''}
+    </div>
+    <p style="color: #666; font-size: 0.9em; margin-top: 10px;">
+      Does this information look correct?
+    </p>
+    <div class="modal-actions">
+      <button class="confirm-btn" id="confirm-scan-btn">
+        ✓ Use This Flight
+      </button>
+      <button class="cancel-btn" id="cancel-scan-btn">
+        ✗ Cancel
+      </button>
+    </div>
+  `;
+
+  scannerStatus.style.display = 'block';
+  scannerStatus.innerHTML = html;
+  scannerStatus.style.background = '#f0f9ff';
+  scannerStatus.style.color = '#333';
+  scannerStatus.style.border = '2px solid #4CAF50';
+
+  // Add event listeners
+  document.getElementById('confirm-scan-btn').addEventListener('click', () => {
+    // Populate search form
+    flightNumberInput.value = `${leg.operatingCarrierDesignator}${leg.flightNumber}`;
+    flightDateInput.value = inputDate;
+
+    // Close modal
+    scannerModal.style.display = 'none';
+
+    // Auto-search
+    searchBtn.click();
+  });
+
+  document.getElementById('cancel-scan-btn').addEventListener('click', () => {
+    scannerStatus.style.display = 'none';
+    barcodeFileInput.value = '';
+  });
+}
+
+// Parse Julian date (day of year) to JavaScript Date
+function parseJulianDate(julianDay) {
+  const currentYear = new Date().getFullYear();
+  const date = new Date(currentYear, 0); // January 1st
+  date.setDate(julianDay);
+  return date;
 }
 
 // Initialize
