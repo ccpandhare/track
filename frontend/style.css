@@ -119,12 +119,17 @@ button:active {
 
 .search-form {
   display: grid;
-  grid-template-columns: 2fr minmax(150px, 1fr) auto;
+  grid-template-columns: 2fr auto auto;
   gap: 15px;
   align-items: center; /* Center align all items */
 }
 
-.search-form input[type="date"],
+.search-form input[type="date"] {
+  margin-bottom: 0; /* Remove margin in search form, grid gap handles spacing */
+  width: 160px; /* Compact width for date input to prevent overlap */
+  max-width: 160px;
+}
+
 .search-form input[type="text"] {
   margin-bottom: 0; /* Remove margin in search form, grid gap handles spacing */
 }
