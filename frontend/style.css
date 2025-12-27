@@ -126,8 +126,7 @@ button:active {
 
 .search-form input[type="date"] {
   margin-bottom: 0; /* Remove margin in search form, grid gap handles spacing */
-  width: 160px; /* Compact width for date input to prevent overlap */
-  max-width: 160px;
+  width: 160px !important; /* Fixed width for date input to prevent overlap */
 }
 
 .search-form input[type="text"] {
