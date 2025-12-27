@@ -9,6 +9,110 @@ const API_URL = window.location.hostname === 'localhost'
 
 let sessionId = localStorage.getItem('sessionId');
 
+// IATA to ICAO airline code mapping
+// FlightAware uses ICAO codes, most users use IATA codes
+const AIRLINE_CODE_MAP = {
+  // Indian Airlines
+  '6E': 'IGO', // IndiGo
+  'AI': 'AIC', // Air India
+  'SG': 'SEJ', // SpiceJet
+  'UK': 'VTI', // Vistara
+  'I5': 'FLZ', // Air Asia India
+  'G8': 'GOW', // GoFirst (Go Air)
+  'IX': 'AXB', // Air India Express
+  '9I': 'ALK', // Alliance Air
+
+  // Major International Airlines
+  'AA': 'AAL', // American Airlines
+  'UA': 'UAL', // United Airlines
+  'DL': 'DAL', // Delta Air Lines
+  'BA': 'BAW', // British Airways
+  'AF': 'AFR', // Air France
+  'LH': 'DLH', // Lufthansa
+  'EK': 'UAE', // Emirates
+  'QR': 'QTR', // Qatar Airways
+  'SQ': 'SIA', // Singapore Airlines
+  'TK': 'THY', // Turkish Airlines
+  'EY': 'ETD', // Etihad Airways
+  'SV': 'SVA', // Saudia
+  'LX': 'SWR', // Swiss International Air Lines
+  'OS': 'AUA', // Austrian Airlines
+  'AZ': 'AZA', // ITA Airways (Alitalia)
+  'KL': 'KLM', // KLM Royal Dutch Airlines
+  'IB': 'IBE', // Iberia
+  'VS': 'VIR', // Virgin Atlantic
+  'AC': 'ACA', // Air Canada
+  'NZ': 'ANZ', // Air New Zealand
+  'QF': 'QFA', // Qantas
+  'NH': 'ANA', // All Nippon Airways
+  'JL': 'JAL', // Japan Airlines
+  'CX': 'CPA', // Cathay Pacific
+  'KE': 'KAL', // Korean Air
+  'OZ': 'AAR', // Asiana Airlines
+  'CA': 'CCA', // Air China
+  'MU': 'CES', // China Eastern Airlines
+  'CZ': 'CSN', // China Southern Airlines
+  'BR': 'EVA', // EVA Air
+  'CI': 'CAL', // China Airlines
+  'TG': 'THA', // Thai Airways
+  'MH': 'MAS', // Malaysia Airlines
+  'GA': 'GIA', // Garuda Indonesia
+  'PR': 'PAL', // Philippine Airlines
+  'VN': 'HVN', // Vietnam Airlines
+  'ET': 'ETH', // Ethiopian Airlines
+  'SA': 'SAA', // South African Airways
+  'MS': 'MSR', // EgyptAir
+  'RJ': 'RJA', // Royal Jordanian
+  'GF': 'GFA', // Gulf Air
+  'WY': 'OMA', // Oman Air
+  'UL': 'ALK', // SriLankan Airlines
+  'PK': 'PIA', // Pakistan International Airlines
+  'BG': 'BBC', // Biman Bangladesh Airlines
+
+  // Low Cost Carriers
+  'FR': 'RYR', // Ryanair
+  'U2': 'EZY', // easyJet
+  'WN': 'SWA', // Southwest Airlines
+  'B6': 'JBU', // JetBlue Airways
+  'NK': 'NKS', // Spirit Airlines
+  'F9': 'FFT', // Frontier Airlines
+  'G4': 'AAY', // Allegiant Air
+  'VY': 'VLG', // Vueling
+  'W6': 'WZZ', // Wizz Air
+  'PC': 'PGT', // Pegasus Airlines
+  'FZ': 'FDB', // flydubai
+  'WY': 'OMA', // Oman Air
+  'XY': 'KNE', // flynas
+  'J9': 'JZR', // Jazeera Airways
+  'QZ': 'AWQ', // Indonesia AirAsia
+  'AK': 'AXM', // AirAsia
+  'TR': 'TGW', // Scoot
+  'VJ': 'VJC', // VietJet Air
+  '3K': 'JSA', // Jetstar Asia
+  'JQ': 'JST', // Jetstar Airways
+  'TT': 'TGG', // Tiger Airways Australia
+  'XT': 'XAR', // Indonesia AirAsia X
+  'D7': 'XAX', // AirAsia X
+  '5J': 'CEB', // Cebu Pacific
+  'Z2': 'APG', // Philippines AirAsia
+};
+
+// Function to convert IATA flight number to ICAO
+function convertToICAO(flightNumber) {
+  // Extract airline code (2-3 letters at start) and flight number
+  const match = flightNumber.match(/^([A-Z0-9]{2})(\d+)$/i);
+  if (match) {
+    const iataCode = match[1].toUpperCase();
+    const flightNum = match[2];
+    const icaoCode = AIRLINE_CODE_MAP[iataCode];
+    if (icaoCode) {
+      return icaoCode + flightNum;
+    }
+  }
+  // Return original if no mapping found
+  return flightNumber;
+}
+
 // DOM Elements
 const authSection = document.getElementById('auth-section');
 const mainSection = document.getElementById('main-section');
@@ -82,24 +186,34 @@ async function apiCall(endpoint, options = {}) {
 }
 
 // Flight history management
-function saveFlightToHistory(flightNumber, flightData) {
+function saveFlightToHistory(flightNumber, flightDate, flightData) {
   try {
     const history = JSON.parse(localStorage.getItem('flightHistory') || '[]');
 
-    // Remove duplicate if exists
-    const filtered = history.filter(f => f.flightNumber !== flightNumber);
+    // Remove duplicate if exists (same flight number AND date)
+    const filtered = history.filter(f => !(f.flightNumber === flightNumber && f.flightDate === flightDate));
 
-    // Add new entry at the beginning
+    // Add new entry at the beginning with more detailed info
     filtered.unshift({
       flightNumber,
+      flightDate,
       searchedAt: Date.now(),
+      lastFetchedAt: Date.now(),
       origin: flightData?.airport?.origin?.code?.iata || 'N/A',
       destination: flightData?.airport?.destination?.code?.iata || 'N/A',
-      status: flightData?.status?.text || 'Unknown'
+      originName: flightData?.airport?.origin?.name || '',
+      destinationName: flightData?.airport?.destination?.name || '',
+      status: flightData?.status?.text || 'Unknown',
+      scheduledDeparture: flightData?.status?.generic?.scheduled?.departure || null,
+      scheduledArrival: flightData?.status?.generic?.scheduled?.arrival || null,
+      estimatedDeparture: flightData?.status?.generic?.estimated?.departure || null,
+      estimatedArrival: flightData?.status?.generic?.estimated?.arrival || null,
+      actualDeparture: flightData?.status?.generic?.actual?.departure || null,
+      actualArrival: flightData?.status?.generic?.actual?.arrival || null
     });
 
-    // Keep only last 10 searches
-    const trimmed = filtered.slice(0, 10);
+    // Keep only last 20 searches (increased from 10 to retain more history)
+    const trimmed = filtered.slice(0, 20);
 
     localStorage.setItem('flightHistory', JSON.stringify(trimmed));
     updateHistoryDisplay();
@@ -117,6 +231,49 @@ function getFlightHistory() {
   }
 }
 
+function deleteFlightFromHistory(flightNumber, flightDate) {
+  try {
+    const history = JSON.parse(localStorage.getItem('flightHistory') || '[]');
+    const filtered = history.filter(f => !(f.flightNumber === flightNumber && f.flightDate === flightDate));
+    localStorage.setItem('flightHistory', JSON.stringify(filtered));
+    updateHistoryDisplay();
+  } catch (error) {
+    console.error('Error deleting flight from history:', error);
+  }
+}
+
+function formatTimeSince(timestamp) {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function formatFlightTime(timestamp) {
+  if (!timestamp) return 'N/A';
+  const date = new Date(timestamp * 1000);
+  return date.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+}
+
+function formatFlightDate(dateStr) {
+  if (!dateStr) return 'N/A';
+  const date = new Date(dateStr);
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+}
+
 function updateHistoryDisplay() {
   const history = getFlightHistory();
 
@@ -126,25 +283,218 @@ function updateHistoryDisplay() {
     datalist.innerHTML = history.map(f => `<option value="${f.flightNumber}">${f.flightNumber} - ${f.origin} to ${f.destination}</option>`).join('');
   }
 
-  // Update recent flights display
+  // Update recent flights display with prioritization
   const recentFlightsDiv = document.getElementById('recent-flights');
   if (recentFlightsDiv && history.length > 0) {
-    recentFlightsDiv.innerHTML = `
-      <div style="font-size: 0.9em; color: #666;">
-        <strong>Recent Searches:</strong>
-        ${history.slice(0, 5).map(f => `
-          <span class="recent-flight-chip" data-flight="${f.flightNumber}">
-            ${f.flightNumber}
-          </span>
-        `).join('')}
-      </div>
-    `;
+    const now = Date.now() / 1000; // Current time in seconds
+    const oneDayAgo = (Date.now() - 24 * 60 * 60 * 1000) / 1000; // 24 hours ago in seconds
 
-    // Add click handlers
+    // Categorize flights
+    const categorizedFlights = {
+      ongoing: [],
+      upcoming: [],
+      recentCompleted: [],
+      oldCompleted: []
+    };
+
+    history.forEach(f => {
+      const scheduledArrival = f.scheduledArrival;
+      const actualArrival = f.actualArrival;
+      const estimatedArrival = f.estimatedArrival;
+      const scheduledDeparture = f.scheduledDeparture;
+
+      // BACKWARD COMPATIBILITY: If this flight doesn't have the new timestamp fields,
+      // it was searched before this update - deprioritize it as old completed
+      if (!scheduledDeparture && !scheduledArrival && !actualArrival) {
+        categorizedFlights.oldCompleted.push(f);
+        return;
+      }
+
+      // Determine if flight is completed
+      const isCompleted = actualArrival ||
+                         (f.status && (f.status.toLowerCase().includes('landed') ||
+                                      f.status.toLowerCase().includes('arrived') ||
+                                      f.status.toLowerCase().includes('diverted') ||
+                                      f.status.toLowerCase().includes('cancelled')));
+
+      if (isCompleted) {
+        // Check if completed more than 1 day ago
+        const completionTime = actualArrival || estimatedArrival || scheduledArrival || (f.searchedAt / 1000);
+        if (completionTime < oneDayAgo) {
+          categorizedFlights.oldCompleted.push(f);
+        } else {
+          categorizedFlights.recentCompleted.push(f);
+        }
+      } else {
+        // Flight is not completed - check if ongoing or upcoming
+        const departureTime = scheduledDeparture;
+
+        if (departureTime && departureTime <= now) {
+          // Flight has departed or should have departed - it's ongoing
+          categorizedFlights.ongoing.push(f);
+        } else if (departureTime) {
+          // Flight hasn't departed yet - it's upcoming
+          categorizedFlights.upcoming.push(f);
+        } else {
+          // No departure time available, treat as old completed
+          categorizedFlights.oldCompleted.push(f);
+        }
+      }
+    });
+
+    // Build the display with sections
+    let html = '<div style="font-size: 0.9em; color: #666;">';
+
+    // Show ongoing flights first (highest priority)
+    if (categorizedFlights.ongoing.length > 0) {
+      html += `
+        <div style="margin-bottom: 12px;">
+          <strong style="color: #2196F3;">✈️ Ongoing Flights:</strong><br>
+          ${categorizedFlights.ongoing.slice(0, 3).map(f => `
+            <span class="recent-flight-chip-wrapper">
+              <span class="recent-flight-chip recent-flight-chip-priority" data-flight="${f.flightNumber}" data-date="${f.flightDate || ''}" title="${f.origin} → ${f.destination} • ${f.status}">
+                ${f.flightNumber}
+              </span>
+              <button class="delete-flight-btn" data-flight="${f.flightNumber}" data-date="${f.flightDate || ''}" title="Remove from history">×</button>
+            </span>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // Show upcoming flights with EXPANDED cards (top 3)
+    if (categorizedFlights.upcoming.length > 0) {
+      html += `<div style="margin-bottom: 16px;">`;
+      html += `<strong style="color: #4CAF50; font-size: 1.05em;">📅 Upcoming Flights</strong>`;
+
+      categorizedFlights.upcoming.slice(0, 3).forEach(f => {
+        const scheduledDep = f.scheduledDeparture;
+        const estimatedDep = f.estimatedDeparture;
+        const actualDep = f.actualDeparture;
+        const displayDep = actualDep || estimatedDep || scheduledDep;
+        const isDelayed = estimatedDep && scheduledDep && estimatedDep > scheduledDep;
+        const staleness = f.lastFetchedAt ? formatTimeSince(f.lastFetchedAt) : 'unknown';
+
+        html += `
+          <div class="upcoming-flight-card" data-flight="${f.flightNumber}" data-date="${f.flightDate || ''}">
+            <button class="delete-flight-btn-card" data-flight="${f.flightNumber}" data-date="${f.flightDate || ''}" title="Remove from history">×</button>
+            <div class="upcoming-flight-header">
+              <div class="upcoming-flight-number">${f.flightNumber}</div>
+              <div class="upcoming-flight-date">${formatFlightDate(f.flightDate)}</div>
+            </div>
+            <div class="upcoming-flight-route">
+              <div class="upcoming-flight-airport">
+                <div class="airport-code">${f.origin}</div>
+                <div class="airport-name">${f.originName || ''}</div>
+              </div>
+              <div class="upcoming-flight-arrow">→</div>
+              <div class="upcoming-flight-airport">
+                <div class="airport-code">${f.destination}</div>
+                <div class="airport-name">${f.destinationName || ''}</div>
+              </div>
+            </div>
+            <div class="upcoming-flight-time">
+              <span class="time-label">Departure:</span>
+              ${isDelayed ? `<span class="time-original-delayed">${formatFlightTime(scheduledDep)}</span>` : ''}
+              <span class="time-current ${isDelayed ? 'time-delayed' : ''}">${formatFlightTime(displayDep)}</span>
+              ${isDelayed ? `<span class="delay-badge">+${Math.round((estimatedDep - scheduledDep) / 60)}m</span>` : ''}
+            </div>
+            <div class="upcoming-flight-staleness">Updated ${staleness}</div>
+          </div>
+        `;
+      });
+
+      html += `</div>`;
+    }
+
+    // Show recently completed flights (lower priority)
+    if (categorizedFlights.recentCompleted.length > 0) {
+      html += `
+        <div style="margin-bottom: 8px;">
+          <strong style="color: #999;">Recent Searches:</strong><br>
+          ${categorizedFlights.recentCompleted.slice(0, 3).map(f => `
+            <span class="recent-flight-chip-wrapper">
+              <span class="recent-flight-chip" data-flight="${f.flightNumber}" data-date="${f.flightDate || ''}" title="${f.origin} → ${f.destination} • ${f.status}">
+                ${f.flightNumber}
+              </span>
+              <button class="delete-flight-btn" data-flight="${f.flightNumber}" data-date="${f.flightDate || ''}" title="Remove from history">×</button>
+            </span>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // Optionally show a few old completed flights if no other categories
+    if (categorizedFlights.ongoing.length === 0 &&
+        categorizedFlights.upcoming.length === 0 &&
+        categorizedFlights.recentCompleted.length === 0 &&
+        categorizedFlights.oldCompleted.length > 0) {
+      html += `
+        <div style="margin-bottom: 8px;">
+          <strong style="color: #bbb;">Past Searches:</strong><br>
+          ${categorizedFlights.oldCompleted.slice(0, 3).map(f => `
+            <span class="recent-flight-chip-wrapper">
+              <span class="recent-flight-chip recent-flight-chip-old" data-flight="${f.flightNumber}" data-date="${f.flightDate || ''}" title="${f.origin} → ${f.destination} • ${f.status}">
+                ${f.flightNumber}
+              </span>
+              <button class="delete-flight-btn" data-flight="${f.flightNumber}" data-date="${f.flightDate || ''}" title="Remove from history">×</button>
+            </span>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    html += '</div>';
+
+    recentFlightsDiv.innerHTML = html;
+
+    // Add click handlers for chips
     document.querySelectorAll('.recent-flight-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         flightNumberInput.value = chip.dataset.flight;
+        if (chip.dataset.date) {
+          flightDateInput.value = chip.dataset.date;
+        }
         searchBtn.click();
+      });
+    });
+
+    // Add click handlers for upcoming flight cards
+    document.querySelectorAll('.upcoming-flight-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        // Don't trigger if clicking the delete button
+        if (e.target.classList.contains('delete-flight-btn-card')) {
+          return;
+        }
+        flightNumberInput.value = card.dataset.flight;
+        if (card.dataset.date) {
+          flightDateInput.value = card.dataset.date;
+        }
+        searchBtn.click();
+      });
+    });
+
+    // Add click handlers for delete buttons (chips)
+    document.querySelectorAll('.delete-flight-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent triggering the chip click
+        const flightNumber = btn.dataset.flight;
+        const flightDate = btn.dataset.date;
+        if (confirm(`Remove ${flightNumber} from history?`)) {
+          deleteFlightFromHistory(flightNumber, flightDate);
+        }
+      });
+    });
+
+    // Add click handlers for delete buttons (cards)
+    document.querySelectorAll('.delete-flight-btn-card').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent triggering the card click
+        const flightNumber = btn.dataset.flight;
+        const flightDate = btn.dataset.date;
+        if (confirm(`Remove ${flightNumber} (${formatFlightDate(flightDate)}) from history?`)) {
+          deleteFlightFromHistory(flightNumber, flightDate);
+        }
       });
     });
   }
@@ -361,8 +711,22 @@ searchBtn.addEventListener('click', async () => {
     resultsSection.style.display = 'none';
     errorDiv.style.display = 'none';
 
-    // Search for flight
-    const searchData = await apiCall(`/flights/search?flightNumber=${flightNumber}&date=${date}`);
+    // Try to convert IATA to ICAO (e.g., 6E1043 -> IGO1043)
+    const icaoFlightNumber = convertToICAO(flightNumber);
+
+    // Search for flight - try ICAO first, then fallback to original
+    let searchData;
+    try {
+      searchData = await apiCall(`/flights/search?flightNumber=${icaoFlightNumber}&date=${date}`);
+    } catch (error) {
+      // If ICAO search fails and it's different from original, try original
+      if (icaoFlightNumber !== flightNumber) {
+        console.log(`ICAO search failed for ${icaoFlightNumber}, trying original ${flightNumber}`);
+        searchData = await apiCall(`/flights/search?flightNumber=${flightNumber}&date=${date}`);
+      } else {
+        throw error;
+      }
+    }
 
     if (!searchData.result || !searchData.result.response || !searchData.result.response.data || searchData.result.response.data.length === 0) {
       showError('No flights found for this flight number');
@@ -392,8 +756,11 @@ searchBtn.addEventListener('click', async () => {
 
     displayFlightInfo(flightDetails, delayPrediction, flightId, inboundFlightDetails);
 
-    // Save to history
-    saveFlightToHistory(flightNumber, flight);
+    // Save to history with date
+    saveFlightToHistory(flightNumber, date, flight);
+
+    // Pre-fill flight number in input for easy date changes
+    flightNumberInput.value = flightNumber;
 
     loadingDiv.style.display = 'none';
     resultsSection.style.display = 'block';

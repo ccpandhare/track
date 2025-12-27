@@ -250,16 +250,22 @@ button:active {
   text-decoration: underline;
 }
 
+.recent-flight-chip-wrapper {
+  display: inline-block;
+  position: relative;
+  margin: 5px 5px 5px 0;
+}
+
 .recent-flight-chip {
   display: inline-block;
   padding: 6px 12px;
-  margin: 5px 5px 5px 0;
   background: #e9ecef;
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.2s;
   font-weight: 500;
   font-size: 0.95em;
+  border: 2px solid transparent;
 }
 
 .recent-flight-chip:hover {
@@ -267,6 +273,221 @@ button:active {
   color: white;
   transform: translateY(-2px);
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.delete-flight-btn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f44336;
+  color: white;
+  border: 2px solid white;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-weight: bold;
+  transition: all 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.delete-flight-btn:hover {
+  background: #d32f2f;
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(244, 67, 54, 0.4);
+}
+
+.recent-flight-chip-priority {
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  border: 2px solid #2196F3;
+  font-weight: 600;
+  animation: pulse-priority 2s ease-in-out infinite;
+}
+
+.recent-flight-chip-priority:hover {
+  background: #2196F3;
+  color: white;
+  border-color: #1976D2;
+}
+
+.recent-flight-chip-old {
+  background: #f5f5f5;
+  color: #999;
+  opacity: 0.7;
+}
+
+.recent-flight-chip-old:hover {
+  background: #999;
+  color: white;
+  opacity: 1;
+}
+
+@keyframes pulse-priority {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.1);
+  }
+}
+
+/* Upcoming flight expanded cards */
+.upcoming-flight-card {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 2px solid #4CAF50;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 10px 0;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.15);
+  position: relative;
+}
+
+.upcoming-flight-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 16px rgba(76, 175, 80, 0.25);
+  border-color: #45a049;
+}
+
+.delete-flight-btn-card {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #f44336;
+  color: white;
+  border: 2px solid white;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-weight: bold;
+  transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+.delete-flight-btn-card:hover {
+  background: #d32f2f;
+  transform: scale(1.15);
+  box-shadow: 0 3px 10px rgba(244, 67, 54, 0.5);
+}
+
+.upcoming-flight-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #b3e5fc;
+}
+
+.upcoming-flight-number {
+  font-size: 1.2em;
+  font-weight: 700;
+  color: #1976d2;
+}
+
+.upcoming-flight-date {
+  font-size: 0.85em;
+  color: #666;
+  font-weight: 500;
+}
+
+.upcoming-flight-route {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.upcoming-flight-airport {
+  flex: 1;
+  text-align: center;
+}
+
+.airport-code {
+  font-size: 1.4em;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 2px;
+}
+
+.airport-name {
+  font-size: 0.75em;
+  color: #666;
+  line-height: 1.2;
+  max-width: 120px;
+  margin: 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upcoming-flight-arrow {
+  font-size: 1.5em;
+  color: #4CAF50;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.upcoming-flight-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.time-label {
+  font-size: 0.9em;
+  color: #666;
+  font-weight: 600;
+}
+
+.time-original-delayed {
+  text-decoration: line-through;
+  color: #999;
+  font-size: 0.95em;
+}
+
+.time-current {
+  font-size: 1.1em;
+  font-weight: 700;
+  color: #333;
+}
+
+.time-delayed {
+  color: #f44336;
+}
+
+.delay-badge {
+  background: #ffebee;
+  color: #c62828;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.upcoming-flight-staleness {
+  font-size: 0.75em;
+  color: #999;
+  text-align: right;
+  font-style: italic;
 }
 
 #map-container {
