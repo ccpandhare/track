@@ -444,8 +444,9 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
           console.log(`[PREDICTION] Searching for probable inbound flights to ${originAirport} by ${operator}`);
 
           // Search for arrivals at the origin airport
-          // Time window: flights arriving between 30 minutes and 4 hours before departure
-          const windowStart = new Date(ourScheduledOff.getTime() - 4 * 60 * 60 * 1000); // 4 hours before
+          // Time window: flights arriving between 30 minutes and 24 hours before departure
+          // Extended to 24 hours to catch overnight positioning and early arrivals
+          const windowStart = new Date(ourScheduledOff.getTime() - 24 * 60 * 60 * 1000); // 24 hours before
           const windowEnd = new Date(ourScheduledOff.getTime() - 30 * 60 * 1000); // 30 minutes before
 
           // Query arrivals at the origin airport
@@ -459,17 +460,21 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
 
           // First, filter by airline and timing (without tail number requirement)
           const potentialFlights = arrivals.filter(arr => {
-            // Must be same operator
-            if (arr.operator !== operator) return false;
+            // Must be same operator (compare both operator and operator_icao if available)
+            const operatorMatch = arr.operator === operator ||
+                                  arr.operator_icao === operator ||
+                                  arr.operator === flight.operator_icao ||
+                                  (arr.operator_icao && arr.operator_icao === flight.operator_icao);
+            if (!operatorMatch) return false;
 
             // Must not be our current flight
             if (arr.fa_flight_id === flight.fa_flight_id) return false;
 
-            // Check arrival time is suitable (30min to 4 hours before departure)
+            // Check arrival time is suitable (30min to 24 hours before departure)
             const arrivalTime = new Date(arr.scheduled_in || arr.estimated_in);
             const minutesBeforeDeparture = (ourScheduledOff - arrivalTime) / (60 * 1000);
 
-            return minutesBeforeDeparture >= 30 && minutesBeforeDeparture <= 240;
+            return minutesBeforeDeparture >= 30 && minutesBeforeDeparture <= 1440;
           });
 
           console.log(`[PREDICTION] Found ${potentialFlights.length} potential inbound flights by ${operator}`);
