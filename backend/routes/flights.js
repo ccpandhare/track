@@ -449,14 +449,23 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
           const windowStart = new Date(ourScheduledOff.getTime() - 24 * 60 * 60 * 1000); // 24 hours before
           const windowEnd = new Date(ourScheduledOff.getTime() - 30 * 60 * 1000); // 30 minutes before
 
-          // Query arrivals at the origin airport
-          const arrivalsData = await callAeroAPI(`/airports/${originAirport}/flights/arrivals`, {
-            start: windowStart.toISOString(),
-            end: windowEnd.toISOString()
+          // Query scheduled arrivals at the origin airport filtered by airline
+          // Note: Using scheduled_arrivals with airline filter instead of arrivals with date filters
+          // because the arrivals endpoint with date filters doesn't reliably include all airlines
+          const arrivalsData = await callAeroAPI(`/airports/${originAirport}/flights/scheduled_arrivals`, {
+            airline: operator  // Filter by airline ICAO code
           });
 
-          const arrivals = arrivalsData.arrivals || [];
-          console.log(`[PREDICTION] Found ${arrivals.length} arrivals at ${originAirport} in time window`);
+          const allArrivals = arrivalsData.scheduled_arrivals || [];
+
+          // Filter by our time window
+          const arrivals = allArrivals.filter(arr => {
+            if (!arr.scheduled_in) return false;
+            const arrivalTime = new Date(arr.scheduled_in);
+            return arrivalTime >= windowStart && arrivalTime <= windowEnd;
+          });
+
+          console.log(`[PREDICTION] Found ${arrivals.length} ${operator} arrivals at ${originAirport} in time window (from ${allArrivals.length} total scheduled)`);
 
           // First, filter by airline and timing (without tail number requirement)
           const potentialFlights = arrivals.filter(arr => {
