@@ -457,13 +457,10 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
           const arrivals = arrivalsData.arrivals || [];
           console.log(`[PREDICTION] Found ${arrivals.length} arrivals at ${originAirport} in time window`);
 
-          // Filter for flights operated by the same airline
-          const candidateFlights = arrivals.filter(arr => {
+          // First, filter by airline and timing (without tail number requirement)
+          const potentialFlights = arrivals.filter(arr => {
             // Must be same operator
             if (arr.operator !== operator) return false;
-
-            // Must have a tail number
-            if (!arr.registration) return false;
 
             // Must not be our current flight
             if (arr.fa_flight_id === flight.fa_flight_id) return false;
@@ -475,16 +472,23 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
             return minutesBeforeDeparture >= 30 && minutesBeforeDeparture <= 240;
           });
 
-          console.log(`[PREDICTION] Found ${candidateFlights.length} candidate inbound flights by ${operator}`);
+          console.log(`[PREDICTION] Found ${potentialFlights.length} potential inbound flights by ${operator}`);
 
-          // Only use probabilistic detection if exactly ONE candidate found
-          if (candidateFlights.length === 1) {
-            const probableInbound = candidateFlights[0];
-            const now = new Date();
-            const inboundDepartureTime = new Date(probableInbound.scheduled_off || probableInbound.estimated_off);
+          // Only proceed if exactly ONE potential flight (to avoid ambiguity)
+          if (potentialFlights.length === 1) {
+            // Now check if this single candidate has a tail number
+            const candidateFlight = potentialFlights[0];
 
-            // Only use if current time is after the inbound flight's scheduled departure
-            if (now > inboundDepartureTime) {
+            if (!candidateFlight.registration) {
+              console.log(`[PREDICTION] Single candidate flight ${candidateFlight.ident} found but has no tail number - skipping probabilistic detection`);
+            } else {
+              // We have exactly one flight with a tail number - use it!
+              const probableInbound = candidateFlight;
+              const now = new Date();
+              const inboundDepartureTime = new Date(probableInbound.scheduled_off || probableInbound.estimated_off);
+
+              // Only use if current time is after the inbound flight's scheduled departure
+              if (now > inboundDepartureTime) {
               console.log(`[PREDICTION] Using probabilistic inbound: ${probableInbound.ident} (${probableInbound.fa_flight_id})`);
 
               prediction.isProbabilistic = true;
@@ -548,12 +552,13 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
                 // Flight has departed, probabilistic inbound was used
                 prediction.onTimeReliability = 'medium';
               }
-            } else {
-              console.log(`[PREDICTION] Inbound flight ${probableInbound.ident} has not departed yet - skipping probabilistic detection`);
+              } else {
+                console.log(`[PREDICTION] Inbound flight ${probableInbound.ident} has not departed yet - skipping probabilistic detection`);
+              }
             }
-          } else if (candidateFlights.length > 1) {
-            console.log(`[PREDICTION] Multiple candidate inbound flights found (${candidateFlights.length}) - too ambiguous for probabilistic detection`);
-            prediction.probabilisticCandidates = candidateFlights.length;
+          } else if (potentialFlights.length > 1) {
+            console.log(`[PREDICTION] Multiple candidate inbound flights found (${potentialFlights.length}) - too ambiguous for probabilistic detection`);
+            prediction.probabilisticCandidates = potentialFlights.length;
           }
         }
       } catch (probError) {
