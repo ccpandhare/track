@@ -449,23 +449,53 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
           const windowStart = new Date(ourScheduledOff.getTime() - 24 * 60 * 60 * 1000); // 24 hours before
           const windowEnd = new Date(ourScheduledOff.getTime() - 30 * 60 * 1000); // 30 minutes before
 
-          // Query scheduled arrivals at the origin airport filtered by airline
-          // Note: Using scheduled_arrivals with airline filter instead of arrivals with date filters
-          // because the arrivals endpoint with date filters doesn't reliably include all airlines
-          const arrivalsData = await callAeroAPI(`/airports/${originAirport}/flights/scheduled_arrivals`, {
-            airline: operator  // Filter by airline ICAO code
+          // Query both scheduled_arrivals and arrivals endpoints
+          // Need both because flights move from scheduled_arrivals to arrivals after landing
+          // Using airline filter to get only flights from the target operator
+          const [scheduledData, completedData] = await Promise.all([
+            callAeroAPI(`/airports/${originAirport}/flights/scheduled_arrivals`, {
+              airline: operator
+            }),
+            callAeroAPI(`/airports/${originAirport}/flights/arrivals`, {
+              start: windowStart.toISOString(),
+              end: windowEnd.toISOString()
+            })
+          ]);
+
+          const scheduledArrivals = scheduledData.scheduled_arrivals || [];
+          const completedArrivals = completedData.arrivals || [];
+
+          // Merge both lists and deduplicate by fa_flight_id
+          const allArrivalsMap = new Map();
+
+          // Add scheduled arrivals (future/in-progress flights)
+          scheduledArrivals.forEach(arr => {
+            if (arr.fa_flight_id) {
+              allArrivalsMap.set(arr.fa_flight_id, arr);
+            }
           });
 
-          const allArrivals = arrivalsData.scheduled_arrivals || [];
+          // Add completed arrivals (already landed), overwriting if same flight
+          // This ensures we get the most up-to-date info
+          completedArrivals.forEach(arr => {
+            if (arr.fa_flight_id) {
+              allArrivalsMap.set(arr.fa_flight_id, arr);
+            }
+          });
 
-          // Filter by our time window
+          const allArrivals = Array.from(allArrivalsMap.values());
+
+          // Filter by our time window and operator
           const arrivals = allArrivals.filter(arr => {
             if (!arr.scheduled_in) return false;
             const arrivalTime = new Date(arr.scheduled_in);
-            return arrivalTime >= windowStart && arrivalTime <= windowEnd;
+            if (arrivalTime < windowStart || arrivalTime > windowEnd) return false;
+
+            // Also verify operator match (in case completedArrivals has other airlines)
+            return arr.operator === operator || arr.operator_icao === operator;
           });
 
-          console.log(`[PREDICTION] Found ${arrivals.length} ${operator} arrivals at ${originAirport} in time window (from ${allArrivals.length} total scheduled)`);
+          console.log(`[PREDICTION] Found ${arrivals.length} ${operator} arrivals at ${originAirport} in time window (${scheduledArrivals.length} scheduled + ${completedArrivals.length} completed)`);
 
           // First, filter by airline and timing (without tail number requirement)
           const potentialFlights = arrivals.filter(arr => {
