@@ -307,6 +307,13 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
       prediction.currentDelay = prediction.departureDelay; // Backward compatibility
     }
 
+    // Add fields for probabilistic prediction and reliability
+    prediction.isProbabilistic = false;
+    prediction.probabilisticReason = null;
+    prediction.probabilisticCandidates = null;
+    prediction.hasInboundData = false; // Track if we have any inbound aircraft data
+    prediction.onTimeReliability = 'unknown'; // 'high', 'low', or 'unknown'
+
     // Check inbound aircraft delay by finding the previous flight operated by the same aircraft
     if (flight.registration) {
       console.log(`[PREDICTION] Looking up route history for aircraft ${flight.registration} to find inbound flight for ${flight.ident}`);
@@ -354,6 +361,7 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
               console.log(`[PREDICTION] Ignoring stale inbound data for ${flight.ident} - inbound arrival was ${hoursBetween.toFixed(1)} hours before departure`);
             } else {
               // Store inbound flight info
+              prediction.hasInboundData = true;
               prediction.inboundFlightIATA = inboundFlight.ident_iata;
               // Check if inbound has landed, otherwise check if departed
               prediction.inboundDeparted = inboundFlight.actual_in ? false : !!inboundFlight.actual_off;
@@ -367,6 +375,7 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
                 // Always set inboundDelayImpact to show the actual delay (positive, negative, or zero)
                 prediction.inboundDelayImpact = inboundArrivalDelay;
                 prediction.confidence = 'high';
+                prediction.onTimeReliability = 'high';
 
                 // If flight hasn't departed yet and inbound was delayed, factor it into departure prediction
                 if (!flight.actual_off && inboundArrivalDelay > 0 && (prediction.currentDelay === null || inboundArrivalDelay > prediction.currentDelay)) {
@@ -392,8 +401,12 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
                   prediction.inboundDelayImpact = predictedInboundDelay;
                   prediction.currentDelay = Math.max(prediction.currentDelay || 0, predictedInboundDelay);
                   prediction.confidence = 'high';
+                  prediction.onTimeReliability = 'high';
 
                   console.log(`[PREDICTION] Flight ${flight.ident}: Inbound aircraft ${inboundFlight.ident} arrives in ${minutesUntilInboundArrival}min, departure in ${minutesUntilDeparture}min -> predicted delay: ${predictedInboundDelay}min`);
+                } else {
+                  // Inbound is on track to arrive with sufficient turnaround time
+                  prediction.onTimeReliability = 'high';
                 }
 
                 // Also check if inbound flight itself is delayed
@@ -404,8 +417,12 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
                     prediction.inboundDelayImpact = totalDelay;
                     prediction.currentDelay = Math.max(prediction.currentDelay || 0, totalDelay);
                     prediction.confidence = 'high';
+                    prediction.onTimeReliability = 'high';
                   }
                 }
+              } else {
+                // Flight has already departed, inbound data available
+                prediction.onTimeReliability = 'high';
               }
             }
           }
@@ -415,7 +432,134 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
         // Continue with prediction even if inbound fetch fails
       }
     } else {
-      console.log(`[PREDICTION] No aircraft registration available for ${flight.ident}`);
+      console.log(`[PREDICTION] No aircraft registration available for ${flight.ident} - attempting probabilistic detection`);
+
+      // Probabilistic inbound flight detection when aircraft registration is not available
+      try {
+        const ourScheduledOff = new Date(flight.scheduled_off);
+        const originAirport = flight.origin?.code_icao || flight.origin?.code_iata;
+        const operator = flight.operator;
+
+        if (originAirport && operator) {
+          console.log(`[PREDICTION] Searching for probable inbound flights to ${originAirport} by ${operator}`);
+
+          // Search for arrivals at the origin airport
+          // Time window: flights arriving between 30 minutes and 4 hours before departure
+          const windowStart = new Date(ourScheduledOff.getTime() - 4 * 60 * 60 * 1000); // 4 hours before
+          const windowEnd = new Date(ourScheduledOff.getTime() - 30 * 60 * 1000); // 30 minutes before
+
+          // Query arrivals at the origin airport
+          const arrivalsData = await callAeroAPI(`/airports/${originAirport}/flights/arrivals`, {
+            start: windowStart.toISOString(),
+            end: windowEnd.toISOString()
+          });
+
+          const arrivals = arrivalsData.arrivals || [];
+          console.log(`[PREDICTION] Found ${arrivals.length} arrivals at ${originAirport} in time window`);
+
+          // Filter for flights operated by the same airline
+          const candidateFlights = arrivals.filter(arr => {
+            // Must be same operator
+            if (arr.operator !== operator) return false;
+
+            // Must have a tail number
+            if (!arr.registration) return false;
+
+            // Must not be our current flight
+            if (arr.fa_flight_id === flight.fa_flight_id) return false;
+
+            // Check arrival time is suitable (30min to 4 hours before departure)
+            const arrivalTime = new Date(arr.scheduled_in || arr.estimated_in);
+            const minutesBeforeDeparture = (ourScheduledOff - arrivalTime) / (60 * 1000);
+
+            return minutesBeforeDeparture >= 30 && minutesBeforeDeparture <= 240;
+          });
+
+          console.log(`[PREDICTION] Found ${candidateFlights.length} candidate inbound flights by ${operator}`);
+
+          // Only use probabilistic detection if exactly ONE candidate found
+          if (candidateFlights.length === 1) {
+            const probableInbound = candidateFlights[0];
+            const now = new Date();
+            const inboundDepartureTime = new Date(probableInbound.scheduled_off || probableInbound.estimated_off);
+
+            // Only use if current time is after the inbound flight's scheduled departure
+            if (now > inboundDepartureTime) {
+              console.log(`[PREDICTION] Using probabilistic inbound: ${probableInbound.ident} (${probableInbound.fa_flight_id})`);
+
+              prediction.isProbabilistic = true;
+              prediction.hasInboundData = true;
+              prediction.inboundFlightId = probableInbound.fa_flight_id;
+              prediction.inboundFlightIATA = probableInbound.ident_iata;
+              prediction.aircraftRegistration = probableInbound.registration;
+              prediction.inboundDeparted = !!probableInbound.actual_off;
+              prediction.inboundExpectedArrival = probableInbound.estimated_in || probableInbound.scheduled_in;
+
+              // Calculate turnaround time
+              const arrivalTime = new Date(probableInbound.scheduled_in || probableInbound.estimated_in);
+              const turnaroundMinutes = Math.round((ourScheduledOff - arrivalTime) / (60 * 1000));
+
+              prediction.probabilisticReason = `Only inbound ${operator} flight to ${originAirport} arriving ${turnaroundMinutes} min before departure`;
+              prediction.probabilisticCandidates = 1;
+
+              // Check if inbound has landed
+              if (probableInbound.actual_in) {
+                const inboundArrivalDelay = Math.round((new Date(probableInbound.actual_in) - new Date(probableInbound.scheduled_in)) / 60000);
+                prediction.inboundDelayImpact = inboundArrivalDelay;
+                prediction.confidence = 'medium'; // Lower than 'high' due to probabilistic nature
+                prediction.onTimeReliability = 'medium';
+
+                if (!flight.actual_off && inboundArrivalDelay > 0 && (prediction.currentDelay === null || inboundArrivalDelay > prediction.currentDelay)) {
+                  prediction.currentDelay = inboundArrivalDelay;
+                }
+              } else if (!flight.actual_off) {
+                // Inbound hasn't arrived yet - predict delay
+                const scheduledDeparture = new Date(flight.scheduled_off);
+                const minutesUntilDeparture = Math.round((scheduledDeparture - now) / 60000);
+
+                const inboundScheduledArrival = new Date(probableInbound.scheduled_in);
+                const inboundEstimatedArrival = probableInbound.estimated_in ? new Date(probableInbound.estimated_in) : inboundScheduledArrival;
+                const minutesUntilInboundArrival = Math.round((inboundEstimatedArrival - now) / 60000);
+
+                const minTurnaroundTime = 30;
+
+                if (minutesUntilInboundArrival > 0 && minutesUntilInboundArrival + minTurnaroundTime > minutesUntilDeparture) {
+                  const predictedInboundDelay = minutesUntilInboundArrival + minTurnaroundTime - minutesUntilDeparture;
+                  prediction.inboundDelayImpact = predictedInboundDelay;
+                  prediction.currentDelay = Math.max(prediction.currentDelay || 0, predictedInboundDelay);
+                  prediction.confidence = 'medium';
+                  prediction.onTimeReliability = 'medium';
+                } else {
+                  prediction.onTimeReliability = 'medium';
+                }
+
+                // Check if inbound is delayed
+                if (probableInbound.estimated_in && probableInbound.scheduled_in) {
+                  const inboundArrivalDelay = Math.round((new Date(probableInbound.estimated_in) - new Date(probableInbound.scheduled_in)) / 60000);
+                  if (inboundArrivalDelay > 0) {
+                    const totalDelay = inboundArrivalDelay + (minutesUntilInboundArrival > 0 ? Math.max(0, minTurnaroundTime - minutesUntilDeparture + minutesUntilInboundArrival) : 0);
+                    prediction.inboundDelayImpact = totalDelay;
+                    prediction.currentDelay = Math.max(prediction.currentDelay || 0, totalDelay);
+                    prediction.confidence = 'medium';
+                    prediction.onTimeReliability = 'medium';
+                  }
+                }
+              } else {
+                // Flight has departed, probabilistic inbound was used
+                prediction.onTimeReliability = 'medium';
+              }
+            } else {
+              console.log(`[PREDICTION] Inbound flight ${probableInbound.ident} has not departed yet - skipping probabilistic detection`);
+            }
+          } else if (candidateFlights.length > 1) {
+            console.log(`[PREDICTION] Multiple candidate inbound flights found (${candidateFlights.length}) - too ambiguous for probabilistic detection`);
+            prediction.probabilisticCandidates = candidateFlights.length;
+          }
+        }
+      } catch (probError) {
+        console.log(`[PREDICTION] Probabilistic detection failed: ${probError.message}`);
+        // Continue without probabilistic prediction
+      }
     }
 
     // Calculate arrival delay
@@ -433,6 +577,16 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
       prediction.predictedDelay = prediction.departureDelay; // Backward compatibility
     }
 
+    // Set reliability to low if no inbound data and flight hasn't departed yet
+    if (!prediction.hasInboundData && !flight.actual_off && prediction.onTimeReliability === 'unknown') {
+      prediction.onTimeReliability = 'low';
+    } else if (prediction.onTimeReliability === 'unknown') {
+      // For flights that have departed or landed, we can rely on actual/estimated times
+      if (flight.actual_off || flight.actual_in) {
+        prediction.onTimeReliability = 'medium';
+      }
+    }
+
     // Determine delay reason
     if (prediction.currentDelay > 15 || prediction.predictedDelay > 15) {
       if (flight.status === 'Cancelled') {
@@ -440,7 +594,11 @@ flightRouter.get('/delay-prediction/:flightId', async (req, res) => {
       } else if (flight.status === 'Diverted') {
         prediction.delayReason = 'Flight diverted';
       } else if (prediction.inboundDelayImpact && prediction.inboundDelayImpact > 15) {
-        prediction.delayReason = 'Inbound aircraft delayed';
+        if (prediction.isProbabilistic) {
+          prediction.delayReason = 'Probable inbound aircraft delayed';
+        } else {
+          prediction.delayReason = 'Inbound aircraft delayed';
+        }
       } else if (!flight.actual_off && prediction.currentDelay > 0) {
         prediction.delayReason = 'Departure delay';
       } else {

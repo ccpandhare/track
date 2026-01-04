@@ -10,7 +10,8 @@
   "dependencies": {
     "@simplewebauthn/browser": "^9.0.0",
     "@zxing/library": "^0.21.3",
-    "bcbp": "^6.0.2"
+    "bcbp": "^6.0.2",
+    "dynamsoft-barcode-reader-bundle": "^11.2.4000"
   },
   "devDependencies": {
     "vite": "^5.0.11"

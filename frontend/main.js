@@ -2,11 +2,7 @@ import {
   startRegistration,
   startAuthentication,
 } from '@simplewebauthn/browser';
-import {
-  BrowserMultiFormatReader,
-  BarcodeFormat,
-  DecodeHintType
-} from '@zxing/library';
+import { BarcodeScanner } from 'dynamsoft-barcode-reader-bundle';
 import { decode } from 'bcbp';
 
 const API_URL = window.location.hostname === 'localhost'
@@ -883,13 +879,40 @@ function displayFlightInfo(flightData, delayData, flightId, inboundFlightData = 
   const maxDelay = Math.max(Math.abs(arrivalDelay), Math.abs(departureDelay));
   const delayClass = maxDelay <= 0 ? 'delay-none' : (maxDelay < 30 ? 'delay-minor' : 'delay-major');
 
+  // Determine reliability message
+  let reliabilityMessage = '';
+  if (maxDelay <= 0 && delayData.onTimeReliability === 'low') {
+    reliabilityMessage = `
+    <div class="info-row" style="background-color: #fff8e1; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid #ffa726;">
+      <div style="font-size: 0.9em; color: #e65100;">
+        <strong>ℹ️ Limited Reliability:</strong> No inbound aircraft data available. This "on time" prediction is based solely on scheduled times and may not reflect actual conditions.
+      </div>
+    </div>`;
+  } else if (delayData.onTimeReliability === 'high' && maxDelay <= 0) {
+    reliabilityMessage = `
+    <div class="info-row" style="background-color: #e8f5e9; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid #4caf50;">
+      <div style="font-size: 0.9em; color: #2e7d32;">
+        <strong>✓ High Reliability:</strong> Prediction based on confirmed inbound aircraft status.
+      </div>
+    </div>`;
+  }
+
   delayDetailsDiv.innerHTML = `
     <div class="delay-indicator ${delayClass}">
       ${maxDelay > 0 ? `⚠️ Delayed` : '✅ On Time'}
     </div>
+    ${reliabilityMessage}
+    ${delayData.isProbabilistic ? `
+    <div class="info-row" style="background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid #2196f3;">
+      <div style="font-size: 0.9em; color: #0d47a1;">
+        <strong>🔍 Probabilistic Detection:</strong> ${delayData.probabilisticReason}
+        <br><span style="font-size: 0.85em; margin-top: 5px; display: block;">This inbound aircraft prediction is based on pattern matching and may not be 100% accurate.</span>
+      </div>
+    </div>
+    ` : ''}
     ${delayData.inboundDelayImpact ? `
     <div class="info-row" style="background-color: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-      <div class="info-label">⚠️ Inbound Aircraft Impact:</div>
+      <div class="info-label">${delayData.isProbabilistic ? '⚠️ Probable Inbound Impact:' : '⚠️ Inbound Aircraft Impact:'}</div>
       <div class="info-value"><strong>${delayData.inboundDelayImpact > 0 ? '+' : ''}${delayData.inboundDelayImpact} minutes</strong></div>
     </div>
     ` : ''}
@@ -951,9 +974,10 @@ function displayFlightInfo(flightData, delayData, flightId, inboundFlightData = 
     const inboundDelayClass = inboundMaxDelay <= 0 ? 'delay-none' : (inboundMaxDelay < 30 ? 'delay-minor' : 'delay-major');
 
     inboundDetailsDiv.innerHTML = `
-      <div class="info-row" style="background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-        <div style="font-size: 0.9em; color: #1976d2;">
-          <strong>ℹ️ This aircraft will operate your searched flight</strong>
+      <div class="info-row" style="background-color: ${delayData.isProbabilistic ? '#fff3e0' : '#e3f2fd'}; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid ${delayData.isProbabilistic ? '#ff9800' : '#2196f3'};">
+        <div style="font-size: 0.9em; color: ${delayData.isProbabilistic ? '#e65100' : '#1976d2'};">
+          <strong>${delayData.isProbabilistic ? '🔍 Probable' : 'ℹ️ Confirmed'} inbound aircraft for your flight</strong>
+          ${delayData.isProbabilistic ? '<br><span style="font-size: 0.85em; margin-top: 5px; display: block;">Based on arrival pattern analysis - may not be 100% accurate</span>' : ''}
         </div>
       </div>
 
@@ -1042,9 +1066,10 @@ function displayFlightInfo(flightData, delayData, flightId, inboundFlightData = 
   } else if (delayData.inboundFlightId) {
     // Show basic info even if we couldn't fetch full details
     inboundDetailsDiv.innerHTML = `
-      <div class="info-row" style="background-color: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-        <div style="font-size: 0.9em; color: #1976d2;">
-          <strong>ℹ️ This aircraft will operate your searched flight</strong>
+      <div class="info-row" style="background-color: ${delayData.isProbabilistic ? '#fff3e0' : '#e3f2fd'}; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid ${delayData.isProbabilistic ? '#ff9800' : '#2196f3'};">
+        <div style="font-size: 0.9em; color: ${delayData.isProbabilistic ? '#e65100' : '#1976d2'};">
+          <strong>${delayData.isProbabilistic ? '🔍 Probable' : 'ℹ️ Confirmed'} inbound aircraft for your flight</strong>
+          ${delayData.isProbabilistic ? '<br><span style="font-size: 0.85em; margin-top: 5px; display: block;">Based on arrival pattern analysis - may not be 100% accurate</span>' : ''}
         </div>
       </div>
 
@@ -1171,41 +1196,96 @@ barcodeFileInput.addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
+  let debugSteps = [];
+
   try {
-    showScannerStatus('📷 Processing image...', 'info');
+    debugSteps.push('✓ File selected');
+    showScannerStatus('📷 Step 1: Creating image URL...', 'info');
 
-    // Load image to canvas
-    const img = await loadImage(file);
-    const ctx = barcodeCanvas.getContext('2d');
-    barcodeCanvas.width = img.width;
-    barcodeCanvas.height = img.height;
-    ctx.drawImage(img, 0, 0);
+    // Create image URL from file
+    const imageUrl = URL.createObjectURL(file);
+    debugSteps.push('✓ Image URL created');
 
-    // Decode PDF417 barcode using ZXing
-    const hints = new Map();
-    hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.PDF_417]);
-    hints.set(DecodeHintType.TRY_HARDER, true);
+    showScannerStatus('📷 Step 2: Initializing scanner...', 'info');
 
-    const codeReader = new BrowserMultiFormatReader(hints);
-    const result = await codeReader.decodeFromCanvas(barcodeCanvas);
-
-    if (!result || !result.getText()) {
-      throw new Error('No barcode found in image');
+    // Initialize Dynamsoft Barcode Scanner
+    let scanner;
+    try {
+      scanner = new BarcodeScanner({
+        license: "DLS2eyJoYW5kc2hha2VDb2RlIjoiMjAwMDAxLTE2NDk4Mjk3OTI2MzUiLCJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSIsInNlc3Npb25QYXNzd29yZCI6IndTcGR6Vm05WDJrcEQ5YUoifQ=="
+      });
+      debugSteps.push('✓ Scanner created');
+    } catch (err) {
+      debugSteps.push(`✗ Scanner error: ${err.message || err}`);
+      throw err;
     }
 
-    const barcodeText = result.getText();
+    showScannerStatus('📷 Step 3: Decoding barcode...', 'info');
+
+    let result;
+    try {
+      result = await scanner.decode(imageUrl);
+      debugSteps.push('✓ Decode complete');
+      debugSteps.push(`Result exists: ${!!result}`);
+      debugSteps.push(`Has barcodeResults: ${!!(result && result.barcodeResults)}`);
+      if (result && result.barcodeResults) {
+        debugSteps.push(`Barcodes found: ${result.barcodeResults.length}`);
+      }
+    } catch (err) {
+      debugSteps.push(`✗ Decode error: ${err.message || err}`);
+      throw err;
+    }
+
+    // Clean up
+    URL.revokeObjectURL(imageUrl);
+
+    if (!result || !result.barcodeResults || result.barcodeResults.length === 0) {
+      showScannerStatus(`❌ No barcode detected in image<br><br><small>Debug Steps:<br>${debugSteps.join('<br>')}</small>`, 'error');
+      return;
+    }
+
+    // Get the first barcode result
+    const barcodeText = result.barcodeResults[0].text;
+    debugSteps.push(`✓ Barcode text extracted (${barcodeText.length} chars)`);
     console.log('Raw barcode data:', barcodeText);
+    console.log('Barcode length:', barcodeText.length);
+    console.log('Barcode format:', result.barcodeResults[0].formatString);
+    console.log('First 50 chars:', barcodeText.substring(0, 50));
+
+    // Show raw data in UI for debugging
+    showScannerStatus(`
+      <div style="background: #ffe; padding: 10px; border: 1px solid #cc9; border-radius: 4px; margin-bottom: 10px;">
+        <strong>Debug - Raw Barcode Data:</strong><br>
+        <code style="font-size: 0.85em; word-break: break-all;">${barcodeText.substring(0, 200)}${barcodeText.length > 200 ? '...' : ''}</code>
+      </div>
+      <p>Processing boarding pass data...</p>
+    `, 'info');
 
     // Parse BCBP data
-    const boardingPass = decode(barcodeText);
-    console.log('Parsed boarding pass:', boardingPass);
+    let boardingPass;
+    try {
+      boardingPass = decode(barcodeText);
+      console.log('Parsed boarding pass:', boardingPass);
+    } catch (parseError) {
+      console.error('BCBP parsing error:', parseError);
+      throw new Error(`Failed to parse boarding pass data: ${parseError.message}`);
+    }
+
+    // Validate parsed data
+    if (!boardingPass || !boardingPass.legs || boardingPass.legs.length === 0) {
+      console.error('Invalid boarding pass structure:', boardingPass);
+      throw new Error('Boarding pass data is incomplete or invalid');
+    }
 
     // Show confirmation UI
     showBoardingPassConfirmation(boardingPass);
 
   } catch (error) {
     console.error('Barcode scanning error:', error);
-    showScannerStatus(`❌ Error: ${error.message}. Please try again with a clearer image.`, 'error');
+    console.error('Error type:', error.constructor.name);
+    console.error('Error stack:', error.stack);
+    const errorMsg = error.message || error.toString() || 'Unknown error occurred';
+    showScannerStatus(`❌ Error: ${errorMsg}<br><br><small>Check browser console for details. Error type: ${error.constructor.name}</small>`, 'error');
   }
 });
 
