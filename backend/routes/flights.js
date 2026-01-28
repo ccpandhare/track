@@ -78,23 +78,64 @@ flightRouter.get('/search', async (req, res) => {
 
     // Convert IATA to ICAO format (e.g., 6E412 -> IGO412)
     const icaoFlightNumber = convertToICAO(flightNumber);
-    console.log(`[FLIGHTS] Searching for flight: ${flightNumber} (ICAO: ${icaoFlightNumber})`);
+    console.log(`[FLIGHTS] Searching for flight: ${flightNumber} (ICAO: ${icaoFlightNumber}), date: ${date || 'today'}`);
 
     // Use the flights endpoint to search for the flight
     const data = await callAeroAPI(`/flights/${icaoFlightNumber}`);
 
     // Filter to find the most relevant flight:
-    // 1. Prefer flights departing today
-    // 2. If none today, get the next upcoming flight
-    // 3. Exclude flights that departed more than 6 hours ago
+    // 1. If date is provided, look for flights on that date
+    // 2. Otherwise, prefer flights departing today
+    // 3. If none today, get the next upcoming flight
+    // 4. Exclude flights that departed more than 6 hours ago
     let relevantFlights = data.flights || [];
     const now = new Date();
     const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
 
-    // Filter out old flights that already landed
+    // Parse requested date if provided
+    let requestedDate = null;
+    let requestedDateStart = null;
+    let requestedDateEnd = null;
+
+    if (date) {
+      try {
+        requestedDate = new Date(date);
+        // Check if date is valid
+        if (isNaN(requestedDate.getTime())) {
+          return res.status(400).json({ error: 'Invalid date format' });
+        }
+
+        // Set to start of day (00:00:00)
+        requestedDateStart = new Date(requestedDate.getFullYear(), requestedDate.getMonth(), requestedDate.getDate());
+        requestedDateEnd = new Date(requestedDateStart.getTime() + 24 * 60 * 60 * 1000);
+
+        console.log(`[FLIGHTS] Looking for flights on ${requestedDateStart.toISOString().split('T')[0]}`);
+
+        // Check if requested date is more than 2 days in the future
+        const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+        if (requestedDateStart > twoDaysFromNow) {
+          return res.status(400).json({
+            error: 'Flight date is too far in the future. Flight information is typically available 1-2 days before departure.',
+            requestedDate: requestedDateStart.toISOString().split('T')[0],
+            message: 'Please check back closer to the flight date.'
+          });
+        }
+      } catch (err) {
+        return res.status(400).json({ error: 'Invalid date format' });
+      }
+    }
+
+    // Filter out old flights that already landed (unless looking for a specific past date)
     relevantFlights = relevantFlights.filter(flight => {
       const scheduledOff = new Date(flight.scheduled_off);
-      return scheduledOff > sixHoursAgo; // Keep flights from last 6 hours onwards
+
+      // If date is provided, only keep flights on that specific date
+      if (requestedDateStart && requestedDateEnd) {
+        return scheduledOff >= requestedDateStart && scheduledOff < requestedDateEnd;
+      }
+
+      // Otherwise, keep flights from last 6 hours onwards
+      return scheduledOff > sixHoursAgo;
     });
 
     // Sort by scheduled departure time (ascending)
@@ -102,17 +143,36 @@ flightRouter.get('/search', async (req, res) => {
       return new Date(a.scheduled_off) - new Date(b.scheduled_off);
     });
 
-    // Find today's flight or next upcoming flight
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+    // Select the flight based on criteria
+    let selectedFlight = null;
 
-    const todaysFlight = relevantFlights.find(f => {
-      const scheduledOff = new Date(f.scheduled_off);
-      return scheduledOff >= todayStart && scheduledOff < todayEnd;
-    });
+    if (requestedDateStart) {
+      // If specific date requested, use the first flight on that date
+      selectedFlight = relevantFlights[0];
 
-    // Use today's flight if exists, otherwise use the first upcoming flight
-    const selectedFlight = todaysFlight || relevantFlights[0];
+      // If no flight found for the requested date, check if it's a future date
+      if (!selectedFlight && requestedDateStart > now) {
+        return res.status(404).json({
+          error: `No flight information available yet for ${requestedDateStart.toISOString().split('T')[0]}`,
+          requestedDate: requestedDateStart.toISOString().split('T')[0],
+          message: 'Flight information is typically available 1-2 days before departure. Please check back later.',
+          availableFlights: data.flights?.length || 0
+        });
+      }
+    } else {
+      // Find today's flight or next upcoming flight
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+      const todaysFlight = relevantFlights.find(f => {
+        const scheduledOff = new Date(f.scheduled_off);
+        return scheduledOff >= todayStart && scheduledOff < todayEnd;
+      });
+
+      // Use today's flight if exists, otherwise use the first upcoming flight
+      selectedFlight = todaysFlight || relevantFlights[0];
+    }
+
     const flightsToReturn = selectedFlight ? [selectedFlight] : [];
 
     console.log(`[FLIGHTS] Found ${relevantFlights.length} flights, selected: ${selectedFlight?.fa_flight_id || 'none'}`);
