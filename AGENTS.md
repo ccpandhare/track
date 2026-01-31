@@ -229,3 +229,25 @@ journalctl -u flight-tracker.service | grep AUDIT
 
 ### Clear Failed Login Attempts
 Rate limiting is IP-based and resets after 15 minutes automatically.
+
+### Service Crashes Due to Native Module Version Mismatch
+
+**Symptom:** Service continuously crashes with error "NODE_MODULE_VERSION mismatch" for better-sqlite3.
+
+**Cause:** Node.js was upgraded but native modules (better-sqlite3) were not rebuilt for the new version.
+
+**Solution:**
+```bash
+# Install build tools if not present
+apt-get update && apt-get install -y build-essential
+
+# Rebuild native modules
+cd /var/www/track/backend
+npm rebuild
+
+# Restart service
+systemctl restart flight-tracker.service
+systemctl status flight-tracker.service
+```
+
+**Important:** After any Node.js version upgrade, always rebuild native modules to prevent this issue.
