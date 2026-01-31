@@ -1120,21 +1120,6 @@ function displayFlightInfo(flightData, delayData, flightId, inboundFlightData = 
   } else {
     inboundAircraftCard.style.display = 'none';
   }
-
-  // Position map (placeholder)
-  const mapContainer = document.getElementById('map-container');
-  if (aircraft.position?.latitude && aircraft.position?.longitude) {
-    mapContainer.innerHTML = `
-      <div style="text-align: center;">
-        <p><strong>Current Position:</strong></p>
-        <p>Latitude: ${aircraft.position.latitude.toFixed(4)}°</p>
-        <p>Longitude: ${aircraft.position.longitude.toFixed(4)}°</p>
-        <p style="margin-top: 10px; color: #999;">Map visualization can be added with Leaflet or Google Maps</p>
-      </div>
-    `;
-  } else {
-    mapContainer.innerHTML = '<p>Position data not available</p>';
-  }
 }
 
 function formatTime(timestamp) {
