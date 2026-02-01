@@ -295,10 +295,39 @@ function formatFlightDate(dateStr) {
 function updateHistoryDisplay() {
   const history = getFlightHistory();
 
-  // Update datalist for autocomplete
+  // Update datalist for autocomplete (exclude completed flights)
   const datalist = document.getElementById('flight-history-list');
   if (datalist) {
-    datalist.innerHTML = history.map(f => `<option value="${f.flightNumber}">${f.flightNumber} - ${f.origin} to ${f.destination}</option>`).join('');
+    const now = Date.now() / 1000; // Current time in seconds
+
+    // Filter out completed flights from autocomplete
+    const activeFlights = history.filter(f => {
+      const actualArrival = f.actualArrival;
+      const scheduledArrival = f.scheduledArrival;
+
+      // If flight has already landed (actualArrival exists and is in the past), exclude it
+      if (actualArrival && actualArrival < now) {
+        return false;
+      }
+
+      // If flight is marked as landed/arrived/cancelled, exclude it
+      if (f.status && (f.status.toLowerCase().includes('landed') ||
+                       f.status.toLowerCase().includes('arrived') ||
+                       f.status.toLowerCase().includes('diverted') ||
+                       f.status.toLowerCase().includes('cancelled'))) {
+        return false;
+      }
+
+      // If scheduled arrival is more than 6 hours in the past and no actual arrival, likely completed
+      if (scheduledArrival && scheduledArrival < (now - 6 * 60 * 60)) {
+        return false;
+      }
+
+      // Otherwise, include in autocomplete (ongoing or upcoming)
+      return true;
+    });
+
+    datalist.innerHTML = activeFlights.map(f => `<option value="${f.flightNumber}">${f.flightNumber} - ${f.origin} to ${f.destination}</option>`).join('');
   }
 
   // Update recent flights display with prioritization
