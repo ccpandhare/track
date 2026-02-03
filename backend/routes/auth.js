@@ -304,39 +304,84 @@ authRouter.post('/login/finish', async (req, res) => {
   }
 });
 
-// Logout
-authRouter.post('/logout', (req, res) => {
-  const sessionId = req.headers['x-session-id'];
+// Logout - now handled by central auth, this endpoint kept for compatibility
+authRouter.post('/logout', async (req, res) => {
+  const CENTRAL_AUTH_URL = process.env.CENTRAL_AUTH_URL || 'https://auth.chinmaypandhare.uk';
+
+  // Get session from cookie or header
+  const sessionId = req.cookies?.ccp_auth_token || req.headers['x-session-id'];
 
   if (sessionId) {
-    const session = db.prepare('SELECT u.username FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?').get(sessionId);
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
-    if (session) {
-      auditLog(AuditEvents.LOGOUT, session.username, true);
+    try {
+      // Forward logout request to central auth
+      await fetch(`${CENTRAL_AUTH_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Cookie': `ccp_auth_token=${sessionId}`,
+        },
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('[AUTH] Error forwarding logout to central auth:', error.message);
     }
   }
 
   res.json({ success: true });
 });
 
-// Check session
-authRouter.get('/session', (req, res) => {
-  const sessionId = req.headers['x-session-id'];
+// Check session - uses central auth
+authRouter.get('/session', async (req, res) => {
+  const CENTRAL_AUTH_URL = process.env.CENTRAL_AUTH_URL || 'https://auth.chinmaypandhare.uk';
+  const SERVICE_NAME = 'track';
 
-  if (!sessionId) {
-    return res.status(401).json({ error: 'No session' });
+  // Get session from cookie (set by central auth on .chinmaypandhare.uk domain)
+  const sessionId = req.cookies?.ccp_auth_token;
+
+  // Also support X-Session-Id header for backward compatibility
+  const headerSessionId = req.headers['x-session-id'];
+
+  if (!sessionId && !headerSessionId) {
+    return res.status(401).json({
+      error: 'No session',
+      redirect: `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(req.protocol + '://' + req.get('host'))}`
+    });
   }
 
-  const session = db.prepare(`
-    SELECT u.username
-    FROM sessions s
-    JOIN users u ON s.user_id = u.id
-    WHERE s.id = ? AND s.expires_at > ?
-  `).get(sessionId, Date.now());
+  // Prefer cookie over header
+  const authToken = sessionId || headerSessionId;
 
-  if (!session) {
-    return res.status(401).json({ error: 'Invalid session' });
+  try {
+    // Verify with central auth
+    const response = await fetch(`${CENTRAL_AUTH_URL}/api/verify?service=${SERVICE_NAME}`, {
+      method: 'GET',
+      headers: {
+        'Cookie': `ccp_auth_token=${authToken}`,
+      },
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      return res.status(401).json({
+        error: 'Auth service unavailable',
+        redirect: `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(req.protocol + '://' + req.get('host'))}`
+      });
+    }
+
+    const result = await response.json();
+
+    if (!result.valid) {
+      return res.status(401).json({
+        error: result.reason === 'no_access' ? 'Access denied' : 'Invalid session',
+        redirect: `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(req.protocol + '://' + req.get('host'))}`
+      });
+    }
+
+    res.json({ username: result.username });
+  } catch (error) {
+    console.error('[AUTH] Error verifying session:', error.message);
+    return res.status(500).json({
+      error: 'Auth service error',
+      redirect: `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(req.protocol + '://' + req.get('host'))}`
+    });
   }
-
-  res.json({ username: session.username });
 });

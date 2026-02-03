@@ -4,8 +4,9 @@ dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
-import { watch } from 'node:fs';
+import { watch, existsSync } from 'node:fs';
 import { authRouter, reloadAllowlist as reloadAuthAllowlist } from './routes/auth.js';
 import { flightRouter } from './routes/flights.js';
 import { authenticateUser, reloadAllowlist as reloadMiddlewareAllowlist } from './middleware/auth.js';
@@ -42,6 +43,7 @@ app.use(cors({
   origin: process.env.ORIGIN || 'http://localhost:5173',
   credentials: true
 }));
+app.use(cookieParser());
 app.use(express.json());
 
 // Routes with rate limiting
@@ -62,14 +64,17 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-// Watch allowlist.json for changes and hot-reload
-watch('./allowlist.json', (eventType) => {
-  if (eventType === 'change') {
-    const authCount = reloadAuthAllowlist();
-    reloadMiddlewareAllowlist();
-    console.log(`[SECURITY] Allowlist hot-reloaded - ${authCount} users allowed`);
-  }
-});
+// Watch allowlist.json for changes and hot-reload (legacy, kept for backward compatibility)
+// Note: With central auth, this is mostly a no-op but kept for transition period
+if (existsSync('./allowlist.json')) {
+  watch('./allowlist.json', (eventType) => {
+    if (eventType === 'change') {
+      const authCount = reloadAuthAllowlist();
+      reloadMiddlewareAllowlist();
+      console.log(`[SECURITY] Allowlist hot-reloaded - ${authCount} users allowed`);
+    }
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

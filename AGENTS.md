@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-Flight Tracker is a passkey-based flight tracking application built with Node.js/Express backend and vanilla JavaScript frontend (Vite build).
+Flight Tracker is a flight tracking application built with Node.js/Express backend and vanilla JavaScript frontend (Vite build).
+
+**Authentication:** Uses central auth service at auth.chinmaypandhare.uk (SSO across all chinmaypandhare.uk subdomains).
 
 ## Critical Deployment Information
 
@@ -71,16 +73,45 @@ journalctl -u flight-tracker.service -f
 
 ## Authentication
 
-### WebAuthn/Passkeys
-- Uses `@simplewebauthn/server` (backend) and `@simplewebauthn/browser` (frontend)
-- No passwords - passkey-only authentication
-- Invite code system for registration
-- Allowlist enforcement (in `backend/allowlist.json`)
+### Central Auth Integration (Current)
 
-### Allowlist Management
-- **File:** `backend/allowlist.json`
-- Hot-reloadable (service watches for changes)
-- Users MUST be in allowlist to register or login
+Track now uses the central authentication service at **auth.chinmaypandhare.uk** for SSO across all subdomains.
+
+**How it works:**
+1. User visits track.chinmaypandhare.uk
+2. Backend checks for `ccp_auth_token` cookie (set on .chinmaypandhare.uk domain)
+3. If no cookie, frontend redirects to `auth.chinmaypandhare.uk/login?service=track&redirect=...`
+4. User authenticates with passkey on central auth
+5. Central auth sets `ccp_auth_token` cookie and redirects back to track
+6. Track backend verifies session by calling `auth.chinmaypandhare.uk/api/verify?service=track`
+
+**Key Files:**
+- `backend/middleware/auth.js` - Verifies sessions with central auth
+- `frontend/main.js` - Handles login redirect to central auth
+
+**Central Auth Endpoints Used:**
+- `GET /api/verify?service=track` - Verify session and service access
+- `POST /api/auth/logout` - Clear session cookie
+
+**Cookie:**
+- Name: `ccp_auth_token`
+- Domain: `.chinmaypandhare.uk` (shared across subdomains)
+- HttpOnly, Secure, SameSite=Lax
+
+**Testing Auth:**
+```bash
+# Without session (should return redirect URL)
+curl -s https://track.chinmaypandhare.uk/api/auth/session
+
+# With valid session
+curl -s https://track.chinmaypandhare.uk/api/auth/session -H "Cookie: ccp_auth_token=<session_id>"
+```
+
+### Legacy WebAuthn (Preserved as Backup)
+
+The original passkey authentication code is preserved in `backend/routes/auth.js` but is not used for new logins. All registration/login now goes through central auth.
+
+**Note:** The allowlist.json file is still watched for backward compatibility but has no effect with central auth. User access is now managed via the central auth service's user_services table.
 
 ### Audit Logging
 - All auth events logged via `backend/utils/audit.js`
@@ -195,12 +226,13 @@ npm run build
 ### Test Backend API
 ```bash
 # Health check
-curl -k https://track.chinmaypandhare.uk/api/health
+curl -s https://track.chinmaypandhare.uk/api/health
 
-# Test login/start endpoint
-curl -k -X POST https://track.chinmaypandhare.uk/api/auth/login/start \
-  -H "Content-Type: application/json" \
-  -d '{"username": "ch64pn"}'
+# Test auth without session (should return redirect URL)
+curl -s https://track.chinmaypandhare.uk/api/auth/session
+
+# Test auth with valid session from central auth
+curl -s https://track.chinmaypandhare.uk/api/auth/session -H "Cookie: ccp_auth_token=<session_id>"
 ```
 
 ### Check Database
@@ -211,15 +243,33 @@ node -e "const db = require('better-sqlite3')('users.db'); console.log(db.prepar
 
 ## Common Tasks
 
-### Add User to Allowlist
-1. Edit `backend/allowlist.json`
-2. Add username to `allowedUsers` array
-3. Service will hot-reload automatically (no restart needed)
+### Grant User Access to Track Service
 
-### Generate Invite Code
+With central auth, user access is managed at auth.chinmaypandhare.uk:
+
 ```bash
-cd /var/www/track/backend
-node generate-invite.js <username>
+cd /var/www/auth/backend
+# Grant track access to existing user
+node -e "
+const db = require('./db.js').default || require('./db.js');
+const userId = db.prepare('SELECT id FROM users WHERE username = ?').get('username')?.id;
+const serviceId = db.prepare('SELECT id FROM services WHERE name = ?').get('track')?.id;
+if (userId && serviceId) {
+  db.prepare('INSERT OR IGNORE INTO user_services (user_id, service_id, granted_at) VALUES (?, ?, ?)').run(userId, serviceId, Date.now());
+  console.log('Access granted');
+}
+"
+```
+
+Or use the admin dashboard at auth.chinmaypandhare.uk/admin.
+
+### Create New User Invite
+
+New users must be invited via central auth:
+
+```bash
+cd /var/www/auth/backend
+node generate-invite.js <username> track,homefinder  # comma-separated services
 ```
 
 ### View Audit Logs

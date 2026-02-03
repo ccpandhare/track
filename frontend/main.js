@@ -1,7 +1,4 @@
-import {
-  startRegistration,
-  startAuthentication,
-} from '@simplewebauthn/browser';
+// Central auth integration - passkey auth moved to auth.chinmaypandhare.uk
 import { BarcodeScanner } from 'dynamsoft-barcode-reader-bundle';
 import { decode } from 'bcbp';
 
@@ -9,6 +6,11 @@ const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3000/api'
   : '/api';
 
+const CENTRAL_AUTH_URL = 'https://auth.chinmaypandhare.uk';
+const SERVICE_NAME = 'track';
+
+// Session is now managed via cookie by central auth
+// We keep this for backward compatibility during migration
 let sessionId = localStorage.getItem('sessionId');
 
 // IATA to ICAO airline code mapping
@@ -148,17 +150,15 @@ const barcodeCanvas = document.getElementById('barcode-canvas');
 // Set today's date as default
 flightDateInput.valueAsDate = new Date();
 
-// Remember username functionality
+// Remember username functionality - kept for compatibility but mostly unused with central auth
 function loadRememberedUsername() {
-  const rememberedUsername = localStorage.getItem('rememberedUsername');
-  if (rememberedUsername) {
-    loginUsername.value = rememberedUsername;
-    rememberUsernameLoginCheckbox.checked = true;
-  }
+  // No longer needed with central auth - username is managed centrally
+  // Kept for backward compatibility but no-op
 }
 
 function saveUsername(username) {
-  if (rememberUsernameLoginCheckbox.checked || rememberUsernameRegisterCheckbox.checked) {
+  // No longer needed with central auth
+  if (rememberUsernameLoginCheckbox?.checked || rememberUsernameRegisterCheckbox?.checked) {
     localStorage.setItem('rememberedUsername', username);
   } else {
     localStorage.removeItem('rememberedUsername');
@@ -574,44 +574,62 @@ function showRegisterForm() {
   errorDiv.style.display = 'none';
 }
 
-// Event listeners for form toggling
-showRegisterLink.addEventListener('click', (e) => {
-  e.preventDefault();
-  showRegisterForm();
-});
+// Event listeners for form toggling - these elements might not exist with central auth
+if (showRegisterLink) {
+  showRegisterLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    // Redirect to central auth registration
+    window.location.href = `${CENTRAL_AUTH_URL}/register?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
+  });
+}
 
-showLoginLink.addEventListener('click', (e) => {
-  e.preventDefault();
-  showLoginForm();
-});
+if (showLoginLink) {
+  showLoginLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    // Redirect to central auth login
+    window.location.href = `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
+  });
+}
 
-// Parse URL parameters for invite link
+// Parse URL parameters for invite link - now redirect to central auth
 function parseInviteLink() {
   const urlParams = new URLSearchParams(window.location.search);
   const username = urlParams.get('username');
   const inviteCode = urlParams.get('invite');
 
   if (username && inviteCode) {
-    // Show registration form and pre-populate fields
-    showRegisterForm();
-    registerUsername.value = username;
-    registerInviteCode.value = inviteCode;
-
-    // Clear URL parameters from address bar (optional, for cleaner UX)
-    window.history.replaceState({}, document.title, window.location.pathname);
+    // Redirect to central auth registration with invite info
+    window.location.href = `${CENTRAL_AUTH_URL}/register?username=${encodeURIComponent(username)}&invite=${encodeURIComponent(inviteCode)}&service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
   }
 }
 
-// Check session on load
+// Check session on load - now uses central auth
 async function checkSession() {
-  if (!sessionId) {
-    showAuthSection();
-    return;
-  }
-
   try {
-    const data = await apiCall('/auth/session');
-    showMainSection(data.username);
+    // Try to verify with central auth via our backend proxy
+    // The backend will check the ccp_auth_token cookie
+    const response = await fetch(`${API_URL}/auth/session`, {
+      method: 'GET',
+      credentials: 'include', // Include cookies
+      headers: sessionId ? { 'X-Session-Id': sessionId } : {}
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      showMainSection(data.username);
+      // Clear legacy sessionId if we authenticated via cookie
+      if (sessionId) {
+        localStorage.removeItem('sessionId');
+        sessionId = null;
+      }
+    } else {
+      const errorData = await response.json().catch(() => ({}));
+      console.log('Session check failed, redirecting to central auth');
+      // Clean up legacy session
+      sessionId = null;
+      localStorage.removeItem('sessionId');
+      showAuthSection(errorData.redirect);
+    }
   } catch (error) {
     console.error('Session check failed:', error);
     sessionId = null;
@@ -620,9 +638,32 @@ async function checkSession() {
   }
 }
 
-function showAuthSection() {
+function showAuthSection(redirectUrl) {
+  // With central auth, redirect to the central login page instead of showing local auth
+  const centralAuthLogin = redirectUrl ||
+    `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
+
+  // Show a brief message before redirecting
+  authSection.innerHTML = `
+    <h1>✈️ Flight Tracker</h1>
+    <div class="auth-form">
+      <h2>Authentication Required</h2>
+      <p style="color: #666; margin-bottom: 20px;">Redirecting to login...</p>
+      <button onclick="window.location.href='${centralAuthLogin}'" style="width: 100%;">
+        Login with Central Auth
+      </button>
+      <p style="margin-top: 15px; text-align: center; color: #999; font-size: 0.9em;">
+        Don't have an account? <a href="${CENTRAL_AUTH_URL}/register" style="color: #2196F3;">Register here</a>
+      </p>
+    </div>
+  `;
   authSection.style.display = 'block';
   mainSection.style.display = 'none';
+
+  // Auto-redirect after a short delay
+  setTimeout(() => {
+    window.location.href = centralAuthLogin;
+  }, 1500);
 }
 
 function showMainSection(username) {
@@ -631,115 +672,44 @@ function showMainSection(username) {
   usernameDisplay.textContent = `Welcome, ${username}`;
 }
 
-// Registration
-registerBtn.addEventListener('click', async () => {
-  const username = registerUsername.value.trim();
-  const inviteCode = registerInviteCode.value.trim();
+// ==================== LEGACY AUTH CODE (DISABLED) ====================
+// Registration and login are now handled by central auth at auth.chinmaypandhare.uk
+// The following code is kept for reference but not used.
+// The buttons (registerBtn, loginBtn) are replaced by the redirect in showAuthSection()
 
-  if (!username) {
-    showError('Please enter a username');
-    return;
-  }
+// Legacy registration - disabled, handled by central auth
+if (registerBtn) {
+  registerBtn.addEventListener('click', () => {
+    // Redirect to central auth registration
+    window.location.href = `${CENTRAL_AUTH_URL}/register?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
+  });
+}
 
-  if (!inviteCode) {
-    showError('Please enter your invite code');
-    return;
-  }
+// Legacy login - disabled, handled by central auth
+if (loginBtn) {
+  loginBtn.addEventListener('click', () => {
+    // Redirect to central auth login
+    window.location.href = `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
+  });
+}
 
-  try {
-    registerBtn.disabled = true;
-    registerBtn.textContent = 'Registering...';
-
-    // Start registration
-    const { options, userId } = await apiCall('/auth/register/start', {
-      method: 'POST',
-      body: JSON.stringify({ username, inviteCode }),
-    });
-
-    // Prompt user for passkey
-    const credential = await startRegistration(options);
-
-    // Finish registration
-    await apiCall('/auth/register/finish', {
-      method: 'POST',
-      body: JSON.stringify({ userId, username, credential, inviteCode }),
-    });
-
-    alert('Registration successful! Please log in.');
-
-    // Save username if checkbox is checked
-    saveUsername(username);
-
-    // Pre-fill login form with registered username
-    loginUsername.value = username;
-    if (rememberUsernameRegisterCheckbox.checked) {
-      rememberUsernameLoginCheckbox.checked = true;
-    }
-
-    registerUsername.value = '';
-    registerInviteCode.value = '';
-    showLoginForm(); // Switch to login form after successful registration
-  } catch (error) {
-    console.error('Registration error:', error);
-    showError(error.message);
-  } finally {
-    registerBtn.disabled = false;
-    registerBtn.textContent = 'Register with Passkey';
-  }
-});
-
-// Login
-loginBtn.addEventListener('click', async () => {
-  const username = loginUsername.value.trim();
-  if (!username) {
-    showError('Please enter a username');
-    return;
-  }
-
-  try {
-    loginBtn.disabled = true;
-    loginBtn.textContent = 'Logging in...';
-
-    // Start authentication
-    const { options, userId } = await apiCall('/auth/login/start', {
-      method: 'POST',
-      body: JSON.stringify({ username }),
-    });
-
-    // Prompt user for passkey
-    const credential = await startAuthentication(options);
-
-    // Finish authentication
-    const data = await apiCall('/auth/login/finish', {
-      method: 'POST',
-      body: JSON.stringify({ userId, credential }),
-    });
-
-    sessionId = data.sessionId;
-    localStorage.setItem('sessionId', sessionId);
-    saveUsername(username); // Save username if checkbox is checked
-    showMainSection(data.username);
-    loginUsername.value = '';
-  } catch (error) {
-    console.error('Login error:', error);
-    showError(error.message);
-  } finally {
-    loginBtn.disabled = false;
-    loginBtn.textContent = 'Login with Passkey';
-  }
-});
-
-// Logout
+// Logout - redirect to central auth logout
 logoutBtn.addEventListener('click', async () => {
   try {
-    await apiCall('/auth/logout', { method: 'POST' });
+    // Call central auth logout to clear the session cookie
+    await fetch(`${CENTRAL_AUTH_URL}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'include'
+    });
   } catch (error) {
     console.error('Logout error:', error);
   } finally {
+    // Clean up any local storage
     sessionId = null;
     localStorage.removeItem('sessionId');
-    showAuthSection();
     resultsSection.style.display = 'none';
+    // Redirect to central auth login
+    window.location.href = `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
   }
 });
 
