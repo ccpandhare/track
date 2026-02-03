@@ -120,24 +120,12 @@ function convertToICAO(flightNumber) {
 // DOM Elements
 const authSection = document.getElementById('auth-section');
 const mainSection = document.getElementById('main-section');
-const loginForm = document.getElementById('login-form');
-const registerForm = document.getElementById('register-form');
-const registerBtn = document.getElementById('register-btn');
-const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
-const registerUsername = document.getElementById('register-username');
-const registerInviteCode = document.getElementById('register-invite-code');
-const loginUsername = document.getElementById('login-username');
 const usernameDisplay = document.getElementById('username-display');
-const showRegisterLink = document.getElementById('show-register-link');
-const showLoginLink = document.getElementById('show-login-link');
-const rememberUsernameLoginCheckbox = document.getElementById('remember-username-login');
-const rememberUsernameRegisterCheckbox = document.getElementById('remember-username-register');
 const searchBtn = document.getElementById('search-btn');
 const flightNumberInput = document.getElementById('flight-number');
 const flightDateInput = document.getElementById('flight-date');
 const loadingDiv = document.getElementById('loading');
-const errorDiv = document.getElementById('error-message'); // Auth section error div
 const errorDivMain = document.getElementById('error-message-main'); // Main section error div
 const resultsSection = document.getElementById('results-section');
 const scanBoardingPassBtn = document.getElementById('scan-boarding-pass-btn');
@@ -150,24 +138,6 @@ const barcodeCanvas = document.getElementById('barcode-canvas');
 // Set today's date as default
 flightDateInput.valueAsDate = new Date();
 
-// Remember username functionality - kept for compatibility but mostly unused with central auth
-function loadRememberedUsername() {
-  // No longer needed with central auth - username is managed centrally
-  // Kept for backward compatibility but no-op
-}
-
-function saveUsername(username) {
-  // No longer needed with central auth
-  if (rememberUsernameLoginCheckbox?.checked || rememberUsernameRegisterCheckbox?.checked) {
-    localStorage.setItem('rememberedUsername', username);
-  } else {
-    localStorage.removeItem('rememberedUsername');
-  }
-}
-
-function clearRememberedUsername() {
-  localStorage.removeItem('rememberedUsername');
-}
 
 // Helper function for API calls
 async function apiCall(endpoint, options = {}) {
@@ -547,51 +517,17 @@ function updateHistoryDisplay() {
   }
 }
 
-// Show error message
+// Show error message in main section
 function showError(message) {
-  // Determine which section is visible and show error in that section
-  const isAuthVisible = authSection.style.display !== 'none';
-  const targetErrorDiv = isAuthVisible ? errorDiv : errorDivMain;
-
-  targetErrorDiv.textContent = message;
-  targetErrorDiv.style.display = 'block';
+  errorDivMain.textContent = message;
+  errorDivMain.style.display = 'block';
 
   setTimeout(() => {
-    targetErrorDiv.style.display = 'none';
+    errorDivMain.style.display = 'none';
   }, 5000);
 }
 
-// Toggle between login and register forms
-function showLoginForm() {
-  loginForm.style.display = 'block';
-  registerForm.style.display = 'none';
-  errorDiv.style.display = 'none';
-}
-
-function showRegisterForm() {
-  loginForm.style.display = 'none';
-  registerForm.style.display = 'block';
-  errorDiv.style.display = 'none';
-}
-
-// Event listeners for form toggling - these elements might not exist with central auth
-if (showRegisterLink) {
-  showRegisterLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    // Redirect to central auth registration
-    window.location.href = `${CENTRAL_AUTH_URL}/register?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
-  });
-}
-
-if (showLoginLink) {
-  showLoginLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    // Redirect to central auth login
-    window.location.href = `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
-  });
-}
-
-// Parse URL parameters for invite link - now redirect to central auth
+// Parse URL parameters for invite link - redirect to central auth
 function parseInviteLink() {
   const urlParams = new URLSearchParams(window.location.search);
   const username = urlParams.get('username');
@@ -639,58 +575,28 @@ async function checkSession() {
 }
 
 function showAuthSection(redirectUrl) {
-  // With central auth, redirect to the central login page instead of showing local auth
+  // With central auth, redirect immediately to the central login page
+  // No intermediate form/screen - just keep showing "Checking authentication..." then redirect
   const centralAuthLogin = redirectUrl ||
     `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
 
-  // Show a brief message before redirecting
-  authSection.innerHTML = `
-    <h1>✈️ Flight Tracker</h1>
-    <div class="auth-form">
-      <h2>Authentication Required</h2>
-      <p style="color: #666; margin-bottom: 20px;">Redirecting to login...</p>
-      <button onclick="window.location.href='${centralAuthLogin}'" style="width: 100%;">
-        Login with Central Auth
-      </button>
-      <p style="margin-top: 15px; text-align: center; color: #999; font-size: 0.9em;">
-        Don't have an account? <a href="${CENTRAL_AUTH_URL}/register" style="color: #2196F3;">Register here</a>
-      </p>
-    </div>
-  `;
-  authSection.style.display = 'block';
-  mainSection.style.display = 'none';
+  // Update the existing spinner message to show "Redirecting..." (minimal change, no new UI)
+  const authForm = authSection.querySelector('.auth-form');
+  if (authForm) {
+    const msgEl = authForm.querySelector('p');
+    if (msgEl) {
+      msgEl.textContent = 'Redirecting to login...';
+    }
+  }
 
-  // Auto-redirect after a short delay
-  setTimeout(() => {
-    window.location.href = centralAuthLogin;
-  }, 1500);
+  // Redirect immediately without showing any login form
+  window.location.href = centralAuthLogin;
 }
 
 function showMainSection(username) {
   authSection.style.display = 'none';
   mainSection.style.display = 'block';
   usernameDisplay.textContent = `Welcome, ${username}`;
-}
-
-// ==================== LEGACY AUTH CODE (DISABLED) ====================
-// Registration and login are now handled by central auth at auth.chinmaypandhare.uk
-// The following code is kept for reference but not used.
-// The buttons (registerBtn, loginBtn) are replaced by the redirect in showAuthSection()
-
-// Legacy registration - disabled, handled by central auth
-if (registerBtn) {
-  registerBtn.addEventListener('click', () => {
-    // Redirect to central auth registration
-    window.location.href = `${CENTRAL_AUTH_URL}/register?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
-  });
-}
-
-// Legacy login - disabled, handled by central auth
-if (loginBtn) {
-  loginBtn.addEventListener('click', () => {
-    // Redirect to central auth login
-    window.location.href = `${CENTRAL_AUTH_URL}/login?service=${SERVICE_NAME}&redirect=${encodeURIComponent(window.location.origin)}`;
-  });
 }
 
 // Logout - redirect to central auth logout
@@ -726,7 +632,7 @@ searchBtn.addEventListener('click', async () => {
   try {
     loadingDiv.style.display = 'block';
     resultsSection.style.display = 'none';
-    errorDiv.style.display = 'none';
+    errorDivMain.style.display = 'none';
 
     // Try to convert IATA to ICAO (e.g., 6E1043 -> IGO1043)
     const icaoFlightNumber = convertToICAO(flightNumber);
@@ -1402,7 +1308,6 @@ function parseJulianDate(julianDay) {
 }
 
 // Initialize
-parseInviteLink(); // Check for invite link parameters first
-loadRememberedUsername(); // Load remembered username if exists
+parseInviteLink(); // Check for invite link parameters first, redirect to central auth
 checkSession();
 updateHistoryDisplay();
