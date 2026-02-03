@@ -145,6 +145,14 @@ The original passkey authentication code is preserved in `backend/routes/auth.js
 
 ## Troubleshooting
 
+### Initial Page Shows Loading Then Redirects
+
+**This is expected behavior.** Since migrating to central auth, the page shows "Checking authentication..." while verifying the session, then either:
+- Shows the main app if authenticated
+- Redirects to auth.chinmaypandhare.uk for login if not authenticated
+
+The old login/register form has been removed. All authentication goes through the central auth service.
+
 ### Login Fails with "Request Failed"
 
 **Symptom:** Users see "request failed" error on login page.
